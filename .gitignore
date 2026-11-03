@@ -6,4 +6,4 @@ target/
 !.env.example
 deploy/runtime-secrets.env
 *.class
-build
+build/
