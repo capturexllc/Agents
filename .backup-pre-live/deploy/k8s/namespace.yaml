@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vamsdest
+  labels:
+    app.kubernetes.io/name: vamsdest
+    pod-security.kubernetes.io/enforce: restricted

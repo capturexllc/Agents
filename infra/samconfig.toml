@@ -1,0 +1,17 @@
+# Non-secret defaults. Domain, certificate, secret ARN, and alert email are supplied per environment through
+# GitHub environment variables or --parameter-overrides; see docs/AWS-DEPLOYMENT.md.
+version = 0.1
+
+[default.global.parameters]
+region = "us-east-1"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+template_file = "template.yaml"
+
+[dev.deploy.parameters]
+stack_name = "vamsdest-dev"
+parameter_overrides = "Environment=dev"
+
+[prod.deploy.parameters]
+stack_name = "vamsdest-prod"
+parameter_overrides = "Environment=prod"

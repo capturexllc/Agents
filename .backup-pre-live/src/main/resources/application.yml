@@ -1,0 +1,32 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+  max-http-request-header-size: 16KB
+  forward-headers-strategy: framework
+spring:
+  application:
+    name: vamsdest
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  servlet:
+    multipart:
+      max-request-size: 1MB
+      max-file-size: 1MB
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+vamsdest:
+  search:
+    mode: ${SEARCH_MODE:demo}
+    api-key: ${TAVILY_API_KEY:}
+  bedrock:
+    enabled: ${BEDROCK_ENABLED:false}
+    region: ${AWS_REGION:us-east-1}
+    model-id: ${BEDROCK_MODEL_ID:us.anthropic.claude-sonnet-5-5}
