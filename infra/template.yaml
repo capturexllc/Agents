@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  VamsDest travel planner on AWS. Static web app on S3 behind CloudFront; HTTP API with a Cognito JWT authorizer;
+  VamsDest travel planner on AWS. Static web app on S3 behind CloudFront; HTTP API (no sign-in);
   API Lambda that queues work; SQS-triggered worker Lambda that runs the Bedrock agents and Tavily searches;
   DynamoDB for trip runs and their event log. See docs/AWS-DEPLOYMENT.md before deploying.
 
@@ -12,8 +12,8 @@ Metadata:
         Parameters: [AppName, Environment]
       - Label: { default: Domain and TLS }
         Parameters: [AppDomainName, CertificateArn, HostedZoneId]
-      - Label: { default: Sign-in }
-        Parameters: [CognitoDomainPrefix, AlertEmail]
+      - Label: { default: Alerts }
+        Parameters: [AlertEmail]
       - Label: { default: Research and models }
         Parameters: [TavilySecretArn, BedrockModelId, BedrockGuardrailId, BedrockGuardrailVersion]
       - Label: { default: Capacity and limits }
@@ -29,17 +29,24 @@ Parameters:
     AllowedValues: [dev, prod]
   AppDomainName:
     Type: String
-    Description: Public hostname for the web app, for example travel.example.com. Must match the ACM certificate.
+    Default: ""
+    Description: Optional custom hostname, for example travel.example.com. Leave empty to serve the app on the default CloudFront URL (no DNS or certificate needed).
   CertificateArn:
     Type: String
-    Description: ACM certificate ARN in us-east-1 covering AppDomainName (CloudFront requires us-east-1).
+    Default: ""
+    Description: ACM certificate ARN in us-east-1 covering AppDomainName. Required only when AppDomainName is set.
   HostedZoneId:
-    Type: AWS::Route53::HostedZone::Id
-    Description: Route 53 public hosted zone that contains AppDomainName.
-  CognitoDomainPrefix:
     Type: String
-    Description: Globally unique prefix for the Cognito Hosted UI domain (letters, digits, hyphens).
-    AllowedPattern: "^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$"
+    Default: ""
+    Description: Route 53 public hosted zone that contains AppDomainName. Required only when AppDomainName is set.
+  AllowedCidrs:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: IPv4 CIDRs allowed to reach the CloudFront app, for example 203.0.113.10/32. Every other IP is blocked when EnableWaf is true.
+  AllowedCidrsV6:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: IPv6 CIDRs allowed to reach the CloudFront app, for example 2001:db8::1/128. Browsers that connect over IPv6 are blocked unless listed here.
   AlertEmail:
     Type: String
     Default: ""
@@ -49,7 +56,7 @@ Parameters:
     Description: Secrets Manager secret ARN whose SecretString is the Tavily API key. Created outside this stack.
   BedrockModelId:
     Type: String
-    Default: us.anthropic.claude-sonnet-5-5
+    Default: ca.amazon.nova-lite-v1:0
   BedrockGuardrailId:
     Type: String
     Default: ""
@@ -59,7 +66,7 @@ Parameters:
   WorkerConcurrency:
     Type: Number
     Default: 5
-    MinValue: 1
+    MinValue: 2
     MaxValue: 100
     Description: Maximum concurrent research runs. Bounds Bedrock and Tavily spend.
   RunRetentionHours:
@@ -74,67 +81,16 @@ Parameters:
   EnableWaf:
     Type: String
     AllowedValues: ["true", "false"]
-    Default: "false"
-    Description: Attach an AWS WAF web ACL to CloudFront. Requires deployment in us-east-1.
+    Default: "true"
+    Description: Attach an AWS WAF web ACL to CloudFront that blocks every IP not in AllowedCidrs. Requires deployment in us-east-1.
 
 Conditions:
   IsProd: !Equals [!Ref Environment, prod]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+  HasCustomDomain: !Not [!Equals [!Ref AppDomainName, ""]]
   EnableWaf: !Equals [!Ref EnableWaf, "true"]
 
 Resources:
-  # ---------- Sign-in ----------
-  TripUserPool:
-    Type: AWS::Cognito::UserPool
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      UserPoolName: !Sub ${AppName}-${Environment}-users
-      DeletionProtection: !If [IsProd, ACTIVE, INACTIVE]
-      UsernameAttributes: [email]
-      AutoVerifiedAttributes: [email]
-      AdminCreateUserConfig:
-        AllowAdminCreateUserOnly: true
-      Policies:
-        PasswordPolicy:
-          MinimumLength: 12
-          RequireLowercase: true
-          RequireUppercase: true
-          RequireNumbers: true
-          RequireSymbols: true
-      AccountRecoverySetting:
-        RecoveryMechanisms:
-          - Name: verified_email
-            Priority: 1
-
-  TripUserPoolDomain:
-    Type: AWS::Cognito::UserPoolDomain
-    Properties:
-      Domain: !Ref CognitoDomainPrefix
-      UserPoolId: !Ref TripUserPool
-
-  TripUserPoolClient:
-    Type: AWS::Cognito::UserPoolClient
-    Properties:
-      ClientName: !Sub ${AppName}-${Environment}-web
-      UserPoolId: !Ref TripUserPool
-      GenerateSecret: false
-      AllowedOAuthFlowsUserPoolClient: true
-      AllowedOAuthFlows: [code]
-      AllowedOAuthScopes: [openid, email, profile]
-      CallbackURLs: [!Sub "https://${AppDomainName}/"]
-      LogoutURLs: [!Sub "https://${AppDomainName}/"]
-      SupportedIdentityProviders: [COGNITO]
-      ExplicitAuthFlows: [ALLOW_REFRESH_TOKEN_AUTH]
-      PreventUserExistenceErrors: ENABLED
-      IdTokenValidity: 60
-      AccessTokenValidity: 60
-      RefreshTokenValidity: 1
-      TokenValidityUnits:
-        IdToken: minutes
-        AccessToken: minutes
-        RefreshToken: days
-
   # ---------- Data and queue ----------
   RunTable:
     Type: AWS::DynamoDB::Table
@@ -152,6 +108,46 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: expiresAt
         Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+
+  # Prompt templates and runtime.yml. Read by the worker through the cache in PromptCatalog; uploaded by
+  # scripts/upload-prompts.sh. The bundled copies in the jar are the fallback if this bucket is empty.
+  PromptBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub ${AppName}-${Environment}-prompts-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+
+  # RAG chunks: one item per chunk of an uploaded policy or rule document, with its embedding vector.
+  RagChunkTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AppName}-${Environment}-rag-chunks
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       SSESpecification:
@@ -185,14 +181,6 @@ Resources:
       DefaultRouteSettings:
         ThrottlingBurstLimit: 100
         ThrottlingRateLimit: 50
-      Auth:
-        DefaultAuthorizer: CognitoJwt
-        Authorizers:
-          CognitoJwt:
-            IdentitySource: $request.header.Authorization
-            JwtConfiguration:
-              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${TripUserPool}
-              audience: [!Ref TripUserPoolClient]
 
   TripApiFunction:
     Type: AWS::Serverless::Function
@@ -256,7 +244,6 @@ Resources:
       MemorySize: 1024
       Timeout: 900
       Tracing: Active
-      ReservedConcurrentExecutions: !Ref WorkerConcurrency
       Environment:
         Variables:
           TABLE_NAME: !Ref RunTable
@@ -267,20 +254,40 @@ Resources:
           BEDROCK_GUARDRAIL_VERSION: !Ref BedrockGuardrailVersion
           AGENT_MAX_SEARCHES: !Ref AgentMaxSearches
           AGENT_CHAT_MAX_SEARCHES: !Ref AgentChatMaxSearches
+          PROMPTS_BUCKET: !Ref PromptBucket
+          PROMPTS_PREFIX: "v1/"
+          PROMPTS_CACHE_SECONDS: "300"
+          RAG_TABLE_NAME: !Ref RagChunkTable
+          RAG_CACHE_SECONDS: "300"
+          EMBEDDING_MODEL_ID: amazon.titan-embed-text-v2:0
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RunTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref RagChunkTable
         - Statement:
             - Sid: ReadTavilyKey
               Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Ref TavilySecretArn
-            - Sid: InvokeClaudeOnBedrock
+            - Sid: InvokeNovaOnBedrock
               Effect: Allow
               Action: bedrock:InvokeModel
               Resource:
                 - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModelId}
-                - arn:aws:bedrock:*::foundation-model/anthropic.*
+                - arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0
+            - Sid: ReadPromptStore
+              Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub ${PromptBucket.Arn}/*
+            - Sid: ListPromptStore
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt PromptBucket.Arn
+            - Sid: EmbedPolicyText
+              Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0
             - Sid: UseGuardrail
               Effect: Allow
               Action: bedrock:ApplyGuardrail
@@ -291,6 +298,60 @@ Resources:
           Properties:
             Queue: !GetAtt JobQueue.Arn
             BatchSize: 1
+            # Caps simultaneous worker invocations without a Lambda reserved-concurrency
+            # reservation (new accounts have a 10-execution total limit, so reservations are refused).
+            ScalingConfig:
+              MaximumConcurrency: !Ref WorkerConcurrency
+
+  # Ingests a document uploaded under v1/rag/ in the prompt bucket: extracts text (PDF pages or Excel rows), chunks
+  # it, embeds each chunk with Titan, and replaces the document's chunks in RagChunkTable.
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AppName}-${Environment}-ingest
+      Description: Indexes policy and rule documents (PDF, Excel) for the search_policies agent tool.
+      Runtime: java21
+      Handler: com.vamsdest.lambda.IngestHandler::handleRequest
+      CodeUri: ../build/lambda/
+      Architectures: [x86_64]
+      MemorySize: 1536
+      Timeout: 300
+      Tracing: Active
+      Environment:
+        Variables:
+          RAG_TABLE_NAME: !Ref RagChunkTable
+          EMBEDDING_MODEL_ID: amazon.titan-embed-text-v2:0
+          JAVA_TOOL_OPTIONS: "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RagChunkTable
+        - Statement:
+            - Sid: ReadPolicyDocuments
+              Effect: Allow
+              Action: s3:GetObject
+              # Built from the bucket name, not !GetAtt, so the bucket notification does not create a cycle.
+              Resource: !Sub arn:aws:s3:::${AppName}-${Environment}-prompts-${AWS::AccountId}-${AWS::Region}/v1/rag/*
+            - Sid: EmbedPolicyText
+              Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0
+      Events:
+        PolicyDocumentUploaded:
+          Type: S3
+          Properties:
+            Bucket: !Ref PromptBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: v1/rag/
+
+  IngestLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${IngestFunction}
+      RetentionInDays: 30
 
   TripWorkerLogGroup:
     Type: AWS::Logs::LogGroup
@@ -350,7 +411,7 @@ Resources:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub ${AppName}-${Environment}-oac
+        Name: !Sub ${AppName}-${Environment}-${AWS::Region}-oac
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
@@ -359,7 +420,7 @@ Resources:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
       ResponseHeadersPolicyConfig:
-        Name: !Sub ${AppName}-${Environment}-security-headers
+        Name: !Sub ${AppName}-${Environment}-${AWS::Region}-security-headers
         SecurityHeadersConfig:
           StrictTransportSecurity:
             AccessControlMaxAgeSec: 31536000
@@ -376,7 +437,7 @@ Resources:
           ContentSecurityPolicy:
             ContentSecurityPolicy: !Sub >-
               default-src 'self';
-              connect-src 'self' https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com;
+              connect-src 'self';
               img-src 'self' data: https://images.unsplash.com;
               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
               font-src 'self' https://fonts.gstatic.com;
@@ -385,11 +446,29 @@ Resources:
               base-uri 'self'
             Override: true
 
+  AllowedIpSet:
+    Type: AWS::WAFv2::IPSet
+    Condition: EnableWaf
+    Properties:
+      Name: !Sub ${AppName}-${Environment}-${AWS::Region}-allowed-ips
+      Scope: CLOUDFRONT
+      IPAddressVersion: IPV4
+      Addresses: !Ref AllowedCidrs
+
+  AllowedIpv6Set:
+    Type: AWS::WAFv2::IPSet
+    Condition: EnableWaf
+    Properties:
+      Name: !Sub ${AppName}-${Environment}-${AWS::Region}-allowed-ips-v6
+      Scope: CLOUDFRONT
+      IPAddressVersion: IPV6
+      Addresses: !Ref AllowedCidrsV6
+
   WebAcl:
     Type: AWS::WAFv2::WebACL
     Condition: EnableWaf
     Properties:
-      Name: !Sub ${AppName}-${Environment}-edge
+      Name: !Sub ${AppName}-${Environment}-${AWS::Region}-edge
       Scope: CLOUDFRONT
       DefaultAction:
         Allow: {}
@@ -398,8 +477,25 @@ Resources:
         CloudWatchMetricsEnabled: true
         MetricName: !Sub ${AppName}-${Environment}-edge
       Rules:
-        - Name: AwsCommonRules
+        - Name: BlockNonAllowlistedIps
           Priority: 0
+          Action:
+            Block: {}
+          Statement:
+            NotStatement:
+              Statement:
+                OrStatement:
+                  Statements:
+                    - IPSetReferenceStatement:
+                        ARN: !GetAtt AllowedIpSet.Arn
+                    - IPSetReferenceStatement:
+                        ARN: !GetAtt AllowedIpv6Set.Arn
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: block-non-allowlisted
+        - Name: AwsCommonRules
+          Priority: 1
           OverrideAction:
             None: {}
           Statement:
@@ -411,7 +507,7 @@ Resources:
             CloudWatchMetricsEnabled: true
             MetricName: common-rules
         - Name: AwsKnownBadInputs
-          Priority: 1
+          Priority: 2
           OverrideAction:
             None: {}
           Statement:
@@ -423,7 +519,7 @@ Resources:
             CloudWatchMetricsEnabled: true
             MetricName: known-bad-inputs
         - Name: RateLimitPerIp
-          Priority: 2
+          Priority: 3
           Action:
             Block: {}
           Statement:
@@ -443,12 +539,14 @@ Resources:
         HttpVersion: http2and3
         IPV6Enabled: true
         PriceClass: PriceClass_100
-        Aliases: [!Ref AppDomainName]
+        Aliases: !If [HasCustomDomain, [!Ref AppDomainName], !Ref AWS::NoValue]
         DefaultRootObject: index.html
-        ViewerCertificate:
-          AcmCertificateArn: !Ref CertificateArn
-          SslSupportMethod: sni-only
-          MinimumProtocolVersion: TLSv1.2_2021
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
         WebACLId: !If [EnableWaf, !GetAtt WebAcl.Arn, !Ref AWS::NoValue]
         Origins:
           - Id: frontend
@@ -479,6 +577,7 @@ Resources:
 
   AppDnsIpv4:
     Type: AWS::Route53::RecordSet
+    Condition: HasCustomDomain
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref AppDomainName
@@ -489,6 +588,7 @@ Resources:
 
   AppDnsIpv6:
     Type: AWS::Route53::RecordSet
+    Condition: HasCustomDomain
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref AppDomainName
@@ -561,19 +661,20 @@ Resources:
 
 Outputs:
   AppUrl:
-    Description: Public web address.
-    Value: !Sub https://${AppDomainName}/
+    Description: Web address of the app (custom domain if set, otherwise the CloudFront URL).
+    Value: !If [HasCustomDomain, !Sub "https://${AppDomainName}/", !Sub "https://${WebDistribution.DomainName}/"]
+  DistributionDomainName:
+    Description: CloudFront domain name for the web app.
+    Value: !GetAtt WebDistribution.DomainName
   ApiBaseUrl:
     Description: HTTP API endpoint behind CloudFront (/api/* is served from the same domain).
     Value: !Sub https://${TripHttpApi}.execute-api.${AWS::Region}.amazonaws.com
-  CognitoUserPoolId:
-    Value: !Ref TripUserPool
-  CognitoClientId:
-    Description: Public app client ID used by the web build (VITE_COGNITO_CLIENT_ID).
-    Value: !Ref TripUserPoolClient
-  CognitoDomain:
-    Description: Hosted UI domain (VITE_COGNITO_DOMAIN).
-    Value: !Sub ${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
+  RagTableName:
+    Description: DynamoDB table of policy document chunks and embeddings.
+    Value: !Ref RagChunkTable
+  PromptBucketName:
+    Description: Bucket that holds prompt templates and runtime.yml (scripts/upload-prompts.sh).
+    Value: !Ref PromptBucket
   FrontendBucketName:
     Value: !Ref FrontendBucket
   DistributionId:

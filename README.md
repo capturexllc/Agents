@@ -1,6 +1,6 @@
 # VamsDest
 
-VamsDest is a Java/Spring Boot travel-planning service built around an agentic harness. Four specialist Claude agents (Destination, Stay & Activities, Flights, and Taxi & Car) run in parallel on Amazon Bedrock. The Taxi & Car agent only researches taxis, ride-hail, airport transfers, and rental cars. Each agent has a live `web_search` tool backed by Tavily: it chooses its own queries, reads the results, searches again where it needs to, and writes a sourced brief. A coordinator agent then merges the four briefs into one package recommendation. Every search and result streams to the React UI over server-sent events, and the follow-up chat assistant can run fresh searches too.
+VamsDest is a Java/Spring Boot travel-planning service built around an agentic harness. Four specialist Amazon Nova agents (Destination, Stay & Activities, Flights, and Taxi & Car) run in parallel on Amazon Bedrock. The Taxi & Car agent only researches taxis, ride-hail, airport transfers, and rental cars. Each agent has a live `web_search` tool backed by Tavily: it chooses its own queries, reads the results, searches again where it needs to, and writes a sourced brief. A coordinator agent then merges the four briefs into one package recommendation. Every search and result streams to the React UI over server-sent events, and the follow-up chat assistant can run fresh searches too.
 
 ## How the harness works
 
@@ -22,7 +22,7 @@ There is no demo or mock mode. The backend will not start without `TAVILY_API_KE
 ```powershell
 $env:TAVILY_API_KEY = "<from your secret manager>"
 $env:AWS_PROFILE = "<profile with bedrock:InvokeModel>"
-$env:AWS_REGION = "us-east-1"
+$env:AWS_REGION = "ca-central-1"
 mvn spring-boot:run
 ```
 
@@ -37,7 +37,7 @@ Optional settings: `BEDROCK_MODEL_ID`, `BEDROCK_GUARDRAIL_ID` together with `BED
 
 ## AWS Bedrock
 
-The service uses the AWS SDK for Java v2 Bedrock Runtime `Converse` API. The default is the US geographic inference profile `us.anthropic.claude-sonnet-5-5`; set `BEDROCK_MODEL_ID` to an available model or inference profile that fits the account's cost, latency, and data-residency requirements. Model access, regions, quotas, and pricing are controlled by AWS and vary by account. The application does not silently switch models. Grant the workload identity only the Bedrock invoke permissions needed for the selected model or inference profile. Prefer EKS Pod Identity or IRSA over static AWS keys. Current profile and lifecycle details are listed in the [AWS Bedrock model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5-5.html).
+The service uses the AWS SDK for Java v2 Bedrock Runtime `Converse` API. The default is Amazon Nova Lite through the Canada geographic inference profile `ca.amazon.nova-lite-v1:0` in `ca-central-1`. Calls routed by this profile stay in Canada (`ca-central-1` or `ca-west-1`). Set `BEDROCK_MODEL_ID` to another available model or inference profile that fits the account's cost, latency, and data-residency requirements. Model access, regions, quotas, and pricing are controlled by AWS and vary by account. The application does not silently switch models. Grant the workload identity only the Bedrock invoke permissions needed for the selected model or inference profile. Prefer EKS Pod Identity or IRSA over static AWS keys. Current profile and lifecycle details are listed in the [AWS Bedrock model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5-5.html).
 
 Live web research uses Tavily through the `web_search` agent tool. Weather, event, hotel, flight, and rental-car findings depend on what the configured web-search provider returns. For guaranteed forecasts or bookable rates, add contracted domain-specific APIs as more harness tools or behind `TravelResearchProvider`; no booking or purchase action is implemented.
 

@@ -47,12 +47,12 @@ class ApiHandlerTest {
     }
 
     @Test
-    void rejectsRequestsWithoutAuthenticatedSubject() {
+    void acceptsRequestsWithoutSignIn() {
         APIGatewayV2HTTPResponse response = handler.handleRequest(
                 event("POST /api/trips", null, TRIP_BODY, null, null), (Context) null);
 
-        assertEquals(401, response.getStatusCode());
-        assertTrue(queued.isEmpty());
+        assertEquals(202, response.getStatusCode());
+        assertEquals(1, queued.size());
     }
 
     @Test
@@ -76,16 +76,16 @@ class ApiHandlerTest {
     }
 
     @Test
-    void hidesTripsFromOtherUsers() {
-        String tripId = "trip-owned-by-a";
-        handler = new ApiHandler(new TripService(seededStore(tripId, "traveler-a"), queued::add,
+    void anyCallerCanReadTheSharedTrip() {
+        String tripId = "trip-shared";
+        handler = new ApiHandler(new TripService(seededStore(tripId, ApiHandler.ANONYMOUS_OWNER), queued::add,
                 Validation.buildDefaultValidatorFactory().getValidator()), mapper);
 
         APIGatewayV2HTTPResponse response = handler.handleRequest(
-                event("GET /api/trips/{tripId}/events", "traveler-b", null, Map.of("tripId", tripId), null),
+                event("GET /api/trips/{tripId}/events", null, null, Map.of("tripId", tripId), null),
                 (Context) null);
 
-        assertEquals(404, response.getStatusCode());
+        assertEquals(200, response.getStatusCode());
     }
 
     @Test
@@ -100,7 +100,7 @@ class ApiHandlerTest {
     @Test
     void queuesChatQuestionAndReturnsRequestId() {
         String tripId = "trip-chat";
-        handler = new ApiHandler(new TripService(seededStore(tripId, "traveler-a"), queued::add,
+        handler = new ApiHandler(new TripService(seededStore(tripId, ApiHandler.ANONYMOUS_OWNER), queued::add,
                 Validation.buildDefaultValidatorFactory().getValidator()), mapper);
 
         APIGatewayV2HTTPResponse response = handler.handleRequest(

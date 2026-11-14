@@ -96,25 +96,67 @@
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>bedrockruntime</artifactId>
-      <version>2.31.54</version>
+      <version>2.57.3</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>dynamodb</artifactId>
-      <version>2.31.54</version>
+      <version>2.57.3</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>sqs</artifactId>
-      <version>2.31.54</version>
+      <version>2.57.3</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>secretsmanager</artifactId>
-      <version>2.31.54</version>
+      <version>2.57.3</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+      <version>2.57.3</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.bsc.langgraph4j</groupId>
+      <artifactId>langgraph4j-core</artifactId>
+      <version>1.9.9</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-core</artifactId>
+      <version>1.23.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-bedrock</artifactId>
+      <version>1.23.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>3.0.8</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>6.0.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.resilience4j</groupId>
+      <artifactId>resilience4j-circuitbreaker</artifactId>
+      <version>2.4.0</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -202,7 +244,12 @@
     </dependencies>
   </dependencyManagement>
   <properties>
+    <pdfbox.version>3.0.8</pdfbox.version>
+    <langgraph4j.version>1.9.9</langgraph4j.version>
     <java.version>21</java.version>
-    <aws.sdk.version>2.31.54</aws.sdk.version>
+    <aws.sdk.version>2.57.3</aws.sdk.version>
+    <poi.version>6.0.0</poi.version>
+    <resilience4j.version>2.4.0</resilience4j.version>
+    <langchain4j.version>1.23.0</langchain4j.version>
   </properties>
 </project>

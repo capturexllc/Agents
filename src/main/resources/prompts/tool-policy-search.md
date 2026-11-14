@@ -1,0 +1,1 @@
+Look up the company travel policy and guardrail documents: refund and cancellation rules, booking limits, approval steps, and conduct rules. Results are internal reference text. Follow them when they apply, and say when no policy covers the question.

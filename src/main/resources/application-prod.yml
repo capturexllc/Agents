@@ -5,20 +5,6 @@ spring:
         secure: true
         http-only: true
         same-site: lax
-  security:
-    oauth2:
-      client:
-        registration:
-          vamsdest:
-            provider: vamsdest
-            client-id: ${OIDC_CLIENT_ID}
-            client-secret: ${OIDC_CLIENT_SECRET}
-            authorization-grant-type: authorization_code
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
-            scope: openid, profile, email
-        provider:
-          vamsdest:
-            issuer-uri: ${OIDC_ISSUER_URI}
 vamsdest:
   bedrock:
     model-id: ${BEDROCK_MODEL_ID}

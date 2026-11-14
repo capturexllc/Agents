@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api } from './api';
-import { authRequired, ensureSignedIn, signOut } from './auth';
+import { Markdown, plainPreview } from './markdown';
 
 type AgentId = 'destination' | 'stay' | 'transport' | 'taxi';
 type AgentStatus = 'idle' | 'running' | 'summarizing' | 'completed' | 'failed';
@@ -106,17 +106,10 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [ready, setReady] = useState(!authRequired);
   const [pollKey, setPollKey] = useState(0);
   const cursorRef = useRef(0);
   const pendingChats = useRef(new Set<string>());
 
-  useEffect(() => {
-    if (!authRequired) return;
-    ensureSignedIn()
-      .then((signedIn) => { if (signedIn) setReady(true); })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Sign-in failed.'));
-  }, []);
 
   // Polls the trip's event log. The cursor lives in a ref so restarting the loop (for example after a chat
   // question) never replays events that were already applied.
@@ -230,15 +223,6 @@ function App() {
     }
   }
 
-  if (!ready) {
-    return (
-      <div className="auth-gate" role="status">
-        <LoaderCircle className="spin" size={20} />
-        <p>{error || 'Signing you in…'}</p>
-      </div>
-    );
-  }
-
   const runningCount = agents.filter((agent) => agent.status === 'running' || agent.status === 'summarizing').length;
   const isBusy = tripStatus === 'planning' && (runningCount > 0 || !tripId);
 
@@ -253,9 +237,6 @@ function App() {
         </a>
         <div className="topbar-right">
           <span className="live-indicator"><span /> {tripStatus === 'planning' ? 'RESEARCH IN PROGRESS' : 'YOUR TRAVEL DESK'}</span>
-          {authRequired && (
-            <button className="signin-link" type="button" onClick={signOut}>Sign out <ArrowRight size={14} /></button>
-          )}
           <button className="avatar" type="button" aria-label="Traveler profile">V</button>
         </div>
       </header>
@@ -366,7 +347,7 @@ function App() {
                   <div className="agent-icon"><AgentIcon id={agent.id} /></div>
                   <div className="agent-details">
                     <div className="agent-title-row"><h3>{agent.name}</h3><span className={`status-label ${agent.status}`}>{statusLabel(agent.status)}</span></div>
-                    <p>{agent.status === 'idle' ? agent.subtitle : agent.message}</p>
+                    <p>{agent.status === 'idle' ? agent.subtitle : plainPreview(agent.message)}</p>
                     {agent.sources.length > 0 && (
                       <div className="source-line">
                         {agent.sources.slice(0, 2).map((source, sourceIndex) => {
@@ -400,7 +381,7 @@ function App() {
             </button>
           </div>
           {showDetails && <p className="details-note">Each specialist is an AI agent that chooses its own live web searches, reads the results, and keeps searching until it has enough evidence. A coordinator then merges their findings. Every recommendation links its sources with retrieval times. Prices and availability are research leads, not confirmed offers. VamsDest never books or purchases travel.</p>}
-          {tripSummary && <article className="package-summary"><span className="section-kicker">COORDINATED PACKAGE BRIEF</span><p>{tripSummary}</p></article>}
+          {tripSummary && <article className="package-summary"><span className="section-kicker">COORDINATED PACKAGE BRIEF</span><Markdown text={tripSummary} /></article>}
 
           {tripStatus === 'idle' && !tripId ? (
             <div className="empty-brief"><span className="empty-symbol"><ArrowDownRight size={20} /></span><p>Your agents’ notes will gather here.</p><span>Start with a destination and dates above.</span></div>
@@ -409,7 +390,7 @@ function App() {
               {agents.map((agent) => (
                 <article className={`brief-card ${agent.status}`} key={agent.id}>
                   <div className="brief-card-heading"><span><AgentIcon id={agent.id} size={16} /></span><span>{agent.name}</span>{agent.status === 'running' || agent.status === 'summarizing' ? <LoaderCircle className="spin brief-spinner" size={15} /> : agent.status === 'completed' ? <Check size={15} className="brief-check" /> : null}</div>
-                  {agent.status === 'idle' ? <p className="brief-placeholder">Notes will appear while the agent researches.</p> : <p className="brief-summary">{agent.message}</p>}
+                  {agent.status === 'idle' ? <p className="brief-placeholder">Notes will appear while the agent researches.</p> : <div className="brief-summary"><Markdown text={agent.message} /></div>}
                   {agent.searches.length > 0 && (
                     <ul className="search-trail" aria-label={`${agent.name} searches`}>
                       {agent.searches.map((query, index) => <li key={`${agent.id}-search-${index}`}>{query}</li>)}
@@ -443,7 +424,8 @@ function App() {
               <p className="chat-empty">Start a trip to ask follow-up questions about the research.</p>
             ) : chatMessages.map((message, index) => (
               <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
-                <span>{message.role === 'user' ? 'YOU' : 'VAMSDEST'}</span><p>{message.content}</p>
+                <span>{message.role === 'user' ? 'YOU' : 'VAMSDEST'}</span>
+                {message.role === 'user' ? <p>{message.content}</p> : <Markdown text={message.content} />}
               </div>
             ))}
             {chatBusy && <div className="chat-message assistant"><span>VAMSDEST</span><p><LoaderCircle className="spin" size={16} /> Reviewing your trip notes…</p></div>}

@@ -27,6 +27,9 @@ public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGate
             "Content-Type", "application/json",
             "Cache-Control", "no-store");
 
+    /** No sign-in: every caller shares one owner, so all trips are visible to anyone who can reach the API. */
+    static final String ANONYMOUS_OWNER = "anonymous";
+
     private final TripService trips;
     private final ObjectMapper mapper;
 
@@ -57,10 +60,7 @@ public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGate
     }
 
     private APIGatewayV2HTTPResponse route(APIGatewayV2HTTPEvent event) throws JsonProcessingException {
-        String owner = subject(event);
-        if (owner == null) {
-            return json(401, Map.of("message", "Sign in required."));
-        }
+        String owner = ANONYMOUS_OWNER;
         String routeKey = event.getRouteKey();
         if ("POST /api/trips".equals(routeKey)) {
             TripRequest request = mapper.readValue(body(event), TripRequest.class);
@@ -75,16 +75,6 @@ public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGate
             return json(202, Map.of("requestId", requestId));
         }
         return json(404, Map.of("message", "Not found."));
-    }
-
-    private static String subject(APIGatewayV2HTTPEvent event) {
-        if (event.getRequestContext() == null || event.getRequestContext().getAuthorizer() == null
-                || event.getRequestContext().getAuthorizer().getJwt() == null) {
-            return null;
-        }
-        Map<String, String> claims = event.getRequestContext().getAuthorizer().getJwt().getClaims();
-        String subject = claims == null ? null : claims.get("sub");
-        return subject == null || subject.isBlank() ? null : subject;
     }
 
     private String body(APIGatewayV2HTTPEvent event) {

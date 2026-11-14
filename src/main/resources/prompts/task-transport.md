@@ -1,0 +1,1 @@
+Research flight options for {{route}}. Travel dates are {{dateRange}}; compare shifting the whole trip up to two days earlier or later. Outbound window: {{outboundWindow}}; return window: {{returnWindow}}. Preferred travel style: {{budget}}. Report only source-backed options, not assumed prices or availability. Finish with a short, sourced flights brief.

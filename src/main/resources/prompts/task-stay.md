@@ -1,0 +1,1 @@
+For {{destination}} from {{dateRange}}, find weather forecasts or seasonal norms, events on those dates, popular activities, hotels, room discounts, and package offers. Preferred travel style: {{budget}}. Distinguish reported listings from bookable availability, and seasonal averages from dated forecasts. Finish with a short, sourced stay & activities brief.

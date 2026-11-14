@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the React app against the deployed Cognito pool and publishes it to S3 + CloudFront.
+# Builds the React app and publishes it to S3 + CloudFront.
 # Usage: scripts/deploy-web.sh <stack-name> [region]
 set -euo pipefail
 
@@ -14,12 +14,7 @@ output() {
 
 BUCKET=$(output FrontendBucketName)
 DISTRIBUTION=$(output DistributionId)
-CLIENT_ID=$(output CognitoClientId)
-COGNITO_DOMAIN=$(output CognitoDomain)
 
-VITE_AUTH_REQUIRED=true \
-VITE_COGNITO_CLIENT_ID="$CLIENT_ID" \
-VITE_COGNITO_DOMAIN="$COGNITO_DOMAIN" \
 npm run build
 
 # Hashed assets are immutable; index.html must always be revalidated so new releases are picked up.

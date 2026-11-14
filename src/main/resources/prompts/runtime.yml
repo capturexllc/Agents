@@ -1,0 +1,14 @@
+# Runtime settings. Read from S3 (PROMPTS_BUCKET/PROMPTS_PREFIX/config/runtime.yml) when present; these bundled
+# values are the fallback. Environment variables give defaults that this file can override.
+model:
+  maxTokens: 1500
+agent:
+  maxTurns: 8
+  specialistSearches: 4
+  chatSearches: 2
+  policySearches: 3             # lookups in the policy corpus (RAG), separate from web searches
+breakers:
+  failureRateThreshold: 50      # percent of failed calls in the window that opens the breaker
+  slidingWindowSize: 10         # number of recent calls considered
+  minimumCalls: 5               # calls needed before the rate counts
+  openSeconds: 30               # time open before a trial call is allowed

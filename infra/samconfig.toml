@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-region = "us-east-1"
+region = "ca-central-1"
 resolve_s3 = true
 capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
 template_file = "template.yaml"

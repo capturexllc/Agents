@@ -29,7 +29,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: vamsdest:0.1.0
+          # Replace with the ECR image pushed in docs/DEPLOY-EKS-VASOLAI.md step 3.
+          image: REPLACE_WITH_ECR_IMAGE_URI:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

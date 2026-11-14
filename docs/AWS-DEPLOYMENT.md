@@ -14,7 +14,7 @@ The architecture is in [VamsDest-AWS-Architecture.docx](VamsDest-AWS-Architectur
 |---|---|
 | CloudFront distribution + ACM certificate + Route 53 records | Single HTTPS origin for the web app (`/`) and API (`/api/*`). Security headers, TLS 1.2+, optional WAF |
 | S3 bucket (private, OAC) | Built React app (`index.html`, `assets/`) |
-| Cognito user pool + Hosted UI app client | Sign-in with email; invite-only by default (`AllowAdminCreateUserOnly`) |
+| No sign-in | Open access; limit by WAF allowlist when `EnableWaf=true` |
 | HTTP API (API Gateway v2) | Routes `POST /api/trips`, `GET /api/trips/{tripId}/events`, `POST /api/trips/{tripId}/chat`; JWT authorizer on every route |
 | API Lambda (`ApiHandler`, Java 21, 512 MB) | Validates requests, writes the trip run, queues work, returns polled events |
 | SQS queue + dead-letter queue | Decouples requests from research; three failed receives move a job to the DLQ |
@@ -26,7 +26,7 @@ The architecture is in [VamsDest-AWS-Architecture.docx](VamsDest-AWS-Architectur
 
 ### Request flow in one paragraph
 
-The browser signs in through Cognito Hosted UI (PKCE) and sends the ID token as a bearer token. `POST /api/trips` creates a `planning` run in DynamoDB and sends a `trip` job to SQS. The worker picks up the job, runs the four specialist agents in parallel (each one decides its own searches and reads results through the `web_search` tool), writes each progress step to the run's event log, merges the briefs, and sets the run to `completed` or `partial`. The browser polls `GET /events?after=<cursor>` every 1.5 seconds and renders events in order. Chat questions follow the same pattern: `POST /chat` queues a `chat` job, and the answer arrives as a `chat_answer` event that carries the request ID.
+The browser calls the API without sign-in. `POST /api/trips` creates a `planning` run in DynamoDB and sends a `trip` job to SQS. The worker picks up the job, runs the four specialist agents in parallel (each one decides its own searches and reads results through the `web_search` tool), writes each progress step to the run's event log, merges the briefs, and sets the run to `completed` or `partial`. The browser polls `GET /events?after=<cursor>` every 1.5 seconds and renders events in order. Chat questions follow the same pattern: `POST /chat` queues a `chat` job, and the answer arrives as a `chat_answer` event that carries the request ID.
 
 ### What changed from the local version
 
@@ -35,7 +35,6 @@ These changes are required for Lambda. They are not optional:
 - **Run state moved from memory to DynamoDB.** Lambda instances don't share memory, so the old in-memory registry can't work here. The local Spring server still uses an in-memory store behind the same `RunStore` interface.
 - **Server-sent events replaced by polling.** API Gateway and Lambda don't hold a long-lived stream open for ten minutes. The event log plus a `nextAfter` cursor gives the same ordered progress.
 - **Work is queued, not run inline.** Research takes minutes. The API returns `202` immediately, and the worker runs the job.
-- **Authentication is a bearer token from Cognito.** The old Spring OIDC session and CSRF flow don't apply to an HTTP API. CSRF is not needed for bearer tokens. The `CsrfController` was moved to `.backup-pre-live/removed/`.
 - **The Spring `prod` profile is not used on AWS.** The `application-prod.yml` OIDC configuration remains for container experiments only. Do not expose the Docker image to the internet: it runs the local profile, which has no authentication.
 
 ---
@@ -46,7 +45,7 @@ Tools (versions tested or minimum):
 
 | Tool | Version | Used for |
 |---|---|---|
-| AWS CLI v2 | 2.15+ | Secrets, Cognito users, invalidations, outputs |
+| AWS CLI v2 | 2.15+ | Secrets, invalidations, outputs |
 | AWS SAM CLI | 1.120+ | `sam deploy` |
 | Java (Temurin) | 21 | Maven build |
 | Maven | 3.9+ | Build and tests |
@@ -126,7 +125,7 @@ The pipeline assumes an IAM role through OIDC. No AWS keys are stored in GitHub.
    }
    ```
 
-3. Permissions: attach a policy that covers only what the stack creates. Start with CloudFormation, Lambda, API Gateway (`apigateway:*` scoped to the API), Cognito, DynamoDB, SQS, SNS, S3 (buckets named `vamsdest-*`), CloudFront, WAFv2, Route 53 record sets in your zone, CloudWatch Logs and alarms, Secrets Manager `GetSecretValue` for the Tavily ARN, and `iam:PassRole` restricted to the roles SAM creates. Tighten this after the first successful deploy by reviewing CloudTrail for denied calls.
+3. Permissions: attach a policy that covers only what the stack creates. Start with CloudFormation, Lambda, API Gateway (`apigateway:*` scoped to the API), DynamoDB, SQS, SNS, S3 (buckets named `vamsdest-*`), CloudFront, WAFv2, Route 53 record sets in your zone, CloudWatch Logs and alarms, Secrets Manager `GetSecretValue` for the Tavily ARN, and `iam:PassRole` restricted to the roles SAM creates. Tighten this after the first successful deploy by reviewing CloudTrail for denied calls.
 
    The `sam deploy` step creates IAM roles for the functions, so the deploy role needs `iam:CreateRole`, `iam:AttachRolePolicy`, `iam:PutRolePolicy`, and `iam:PassRole` on `arn:aws:iam::<ACCOUNT_ID>:role/vamsdest-*`, plus `iam:DeleteRole*` for rollbacks.
 
@@ -143,7 +142,6 @@ In GitHub, create environments `dev` and `prod` (Settings > Environments). For `
 | `APP_DOMAIN_NAME` | `travel.example.com` | Must match the certificate |
 | `CERTIFICATE_ARN` | `arn:aws:acm:us-east-1:...` | From 3.1 |
 | `HOSTED_ZONE_ID` | `Z0123456789ABC` | From 3.1 |
-| `COGNITO_DOMAIN_PREFIX` | `vamsdest-dev-auth` | Globally unique, lowercase |
 | `TAVILY_SECRET_ARN` | `arn:aws:secretsmanager:...` | From 3.2 |
 | `ALERT_EMAIL` | `ops@example.com` | Optional; empty disables the subscription |
 | `BEDROCK_MODEL_ID` | `us.anthropic.claude-sonnet-5-5` | From 3.3 |
@@ -168,7 +166,7 @@ The deploy job:
 
 1. Builds the Lambda package (`scripts/package-lambda.sh`), which produces `build/lambda/`.
 2. Runs `sam deploy` with `infra/samconfig.toml` and the environment variables as parameter overrides. The change set is applied without confirmation in CI, but the `prod` environment's required reviewers approve the job first.
-3. Builds the web app against the Cognito outputs and publishes it (`scripts/deploy-web.sh`), then invalidates `/index.html` in CloudFront.
+3. Builds the web app and publishes it (`scripts/deploy-web.sh`), then invalidates `/index.html` in CloudFront.
 4. Smoke-tests the site and confirms that an unauthenticated `POST /api/trips` returns `401`.
 
 Watch the run in the Actions tab. The first deploy takes about 15 to 25 minutes, mostly CloudFront distribution creation.
@@ -195,7 +193,6 @@ sam deploy --config-env dev --region us-east-1 \
     AppDomainName=travel.example.com \
     CertificateArn=arn:aws:acm:us-east-1:123456789012:certificate/... \
     HostedZoneId=Z0123456789ABC \
-    CognitoDomainPrefix=vamsdest-dev-auth \
     TavilySecretArn=arn:aws:secretsmanager:us-east-1:123456789012:secret:vamsdest/dev/tavily-api-key-AbCdEf \
     AlertEmail=ops@example.com \
     BedrockModelId=us.anthropic.claude-sonnet-5-5
@@ -212,20 +209,9 @@ If `sam deploy` reports "No changes", that is not an error: the stack already ma
 
 ---
 
-## 6. Create the first user
+## 6. Access
 
-Self sign-up is off. Invite users with the CLI or the Cognito console:
-
-```bash
-POOL_ID=$(aws cloudformation describe-stacks --stack-name vamsdest-dev \
-  --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolId'].OutputValue" --output text)
-
-aws cognito-idp admin-create-user --user-pool-id "$POOL_ID" --username traveler@example.com \
-  --user-attributes Name=email,Value=traveler@example.com Name=email_verified,Value=true \
-  --desired-delivery-mediums EMAIL
-```
-
-The user receives a temporary password by email, signs in at `https://<AppDomainName>/`, and sets a new password.
+There is no sign-in. The app and its API are open to anyone who can reach the CloudFront URL. To limit access, set `EnableWaf=true` in us-east-1 and list the allowed addresses in `AllowedCidrs` and `AllowedCidrsV6`. Every other IP is blocked at the edge.
 
 ---
 
@@ -235,7 +221,7 @@ Run these after every deploy. Each step has an expected result.
 
 1. **Web app loads.** `curl -sI https://travel.example.com/` returns `200` and includes `strict-transport-security` and `content-security-policy` headers.
 2. **Authorizer rejects anonymous calls.** `curl -s -o /dev/null -w "%{http_code}" -X POST https://travel.example.com/api/trips -H "Content-Type: application/json" -d "{}"` returns `401`.
-3. **Sign-in works.** In the browser, sign in as the invited user. The page loads without a sign-in loop, and the topbar shows "Sign out".
+3. **The app loads.** Open the URL. The trip form appears with no sign-in step.
 4. **A trip runs end to end.** Enter a destination and dates and click "Plan my trip". Within a few minutes, each of the four specialists shows a search trail and a completed brief, followed by a coordinated package. The trip reaches "Research complete" or "Some agents need a retry".
 5. **Chat answers.** Ask a follow-up question. The answer arrives as an assistant message after one or two polls.
 6. **Logs show the harness.** In CloudWatch, the worker log group `/aws/lambda/vamsdest-<env>-worker` shows `agent run finished turns=... searches=... inputTokens=... outputTokens=...` for each agent. The logs must not contain trip text or the Tavily key.
@@ -341,20 +327,17 @@ Do this for each new AWS account, and after any change to the template or the IA
 
 | Symptom | Likely cause | Check |
 |---|---|---|
-| Browser stuck on "Signing you in…" | Callback URL or Cognito domain mismatch | `CallbackURLs` equals `https://<AppDomainName>/`; `VITE_COGNITO_DOMAIN` equals the `CognitoDomain` output |
 | `401` on every API call while signed in | Token audience mismatch | The issuer and audience in `TripHttpApi` must use the same user pool and client as the web build |
 | Trip stays "Joining the research queue" | Worker not triggered or failing | SQS queue depth; worker log group for stack traces |
 | Agents show "could not complete" | Tavily or Bedrock access | Worker logs; Tavily key valid; Bedrock model access granted in the region; IAM policy resource ARNs match `BEDROCK_MODEL_ID` |
 | Coordinator reports partial | Summary call failed | Worker logs for `coordinator failed`; Bedrock throttling |
 | DLQ alarm fires | Repeated worker failures for one message | Read the message body in the DLQ; fix the cause; redrive |
 | `sam deploy` fails on the distribution | Certificate not in us-east-1 or not validated | `aws acm describe-certificate --region us-east-1` |
-| `sam deploy` fails with "already exists" for the Cognito domain | Prefix taken globally | Choose another `COGNITO_DOMAIN_PREFIX` |
 
 ---
 
 ## 11. Known limitations
 
-- **Session length.** The ID token lasts one hour, and the web app does not refresh it. Users sign in again after an hour. Adding refresh-token handling is a small follow-up.
 - **Cold starts.** The API and worker packages are about 48 MB. The first request after an idle period is slower. SnapStart can be enabled for the API with an alias, but it was not configured in this template.
 - **Single region.** There is no cross-region failover. The stack runs in one region.
 - **Bedrock IAM scope.** The model permission uses a wildcard on the foundation-model ARN because the inference profile routes across regions. Tighten it after you confirm the regions in use.
@@ -373,4 +356,4 @@ Do this for each new AWS account, and after any change to the template or the IA
 | `.github/workflows/deploy.yml` | Verify, deploy, smoke test |
 | `src/main/java/com/vamsdest/lambda/` | Lambda entry points (`ApiHandler`, `WorkerHandler`) |
 | `src/main/java/com/vamsdest/agent/` | Harness, coordinator, run store, job processor |
-| `src/auth.ts`, `src/api.ts` | Cognito PKCE sign-in and bearer-token API client |
+| `src/api.ts` | JSON client for the API |

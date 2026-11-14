@@ -1,0 +1,1 @@
+Research {{destination}} for a trip {{dateRange}}. Cover key neighborhoods, cultural highlights, local transport, entry or visa notes, and practical visitor information. Finish with a short, sourced destination brief.

@@ -18,7 +18,12 @@
 
     <properties>
         <java.version>21</java.version>
-        <aws.sdk.version>2.31.54</aws.sdk.version>
+        <aws.sdk.version>2.57.3</aws.sdk.version>
+        <langgraph4j.version>1.9.9</langgraph4j.version>
+        <langchain4j.version>1.23.0</langchain4j.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
+        <poi.version>6.0.0</poi.version>
     </properties>
 
     <dependencyManagement>
@@ -69,6 +74,43 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>secretsmanager</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+        <!-- Agent orchestration: LangGraph4j (graph state machine), LangChain4j (Bedrock chat model, tool specs). -->
+        <dependency>
+            <groupId>org.bsc.langgraph4j</groupId>
+            <artifactId>langgraph4j-core</artifactId>
+            <version>${langgraph4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-core</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-bedrock</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <!-- RAG ingestion: PDF text (PDFBox) and Excel rows (POI). -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <!-- Circuit breakers around Bedrock and the search API. -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>${resilience4j.version}</version>
         </dependency>
         <dependency>
             <groupId>com.amazonaws</groupId>
