@@ -41,9 +41,13 @@ PDF = HERE / "VamsDest-AWS-Infrastructure.pdf"
 
 TITLE = "VamsDest on AWS: infrastructure inventory"
 
-SUMMARY = (
-    'Everything the serverless stack (infra/template.yaml) creates, plus what it depends on and what it does not create. The stack deploys to a single AWS region. CloudFront, Route 53 and the WAF web ACL are global or us-east-1 services. The template creates no VPC, subnets, NAT gateway, load balancer or EC2 instances, so there are no availability zones to choose and no VPC firewall rules to manage. There is no sign-in. Protection comes from CloudFront, AWS WAF (when enabled), API Gateway throttling and IAM.'
-)
+SUMMARY = ('Everything the serverless stack (infra/template.yaml) creates, plus what it depends on and what it does '
+ 'not create. The stack deploys to a single AWS region. CloudFront, Route 53 and the WAF web ACL are global '
+ 'or us-east-1 services. The agent runtime runs inside Lambda: a LangGraph4j trip graph of ReAct agents '
+ '(LangChain4j for the chat model), with circuit breakers, prompts and settings in S3, and a RAG pipeline '
+ 'over policy PDFs and Excel files using an open-source embedding model. The template creates no VPC, '
+ 'subnets, NAT gateway, load balancer or EC2 instances. There is no sign-in. Protection comes from '
+ 'CloudFront, AWS WAF (when enabled), API Gateway throttling and IAM.')
 
 # ---------------------------------------------------------------------------
 # Inventory. Columns: ID, component, AWS service, configuration, scope (region / AZ), security, notes
@@ -78,7 +82,7 @@ INVENTORY = [('C01',
   'HSTS 1 year with subdomains, nosniff, frame DENY, strict-origin-when-cross-origin, CSP',
   'Global',
   'Browser hardening',
-  'Content Security Policy from the template.'),
+  "CSP connect-src allows only the app's own origin."),
  ('C05',
   'Web application firewall',
   'AWS WAF (CLOUDFRONT scope)',
@@ -112,26 +116,27 @@ INVENTORY = [('C01',
  ('C09',
   'HTTP API',
   'Amazon API Gateway (HTTP API, $default stage)',
-  'No authorizer on any route. Default throttle 50 requests/s with burst 100. Routes: POST /api/trips, GET '
+  'No authorizer. Default throttle 50 requests/s with burst 100. Routes: POST /api/trips, GET '
   '/api/trips/{tripId}/events, POST /api/trips/{tripId}/chat',
   'Regional',
   'No sign-in. Anyone who can reach the URL can create trips',
-  'No authorizer: the API is open to any caller.'),
+  'Requests share one owner (anonymous).'),
  ('C10',
   'API function',
   'AWS Lambda (Java 21, x86_64)',
   '512 MB. 10 s timeout. X-Ray tracing active. Handler ApiHandler',
   'Regional. AWS spreads the function across AZs',
-  'No caller identity: all trips share one owner',
-  'Creates runs, serves polled events, queues chat questions.'),
+  'No caller identity',
+  'Creates runs, serves polled events, queues trip and chat jobs. Does no agent work.'),
  ('C11',
-  'Research worker',
+  'Agent worker',
   'AWS Lambda (Java 21, x86_64)',
-  '1024 MB. 900 s timeout. X-Ray tracing. Batch size 1. Maximum concurrency set by WorkerConcurrency '
+  '2048 MB. 900 s timeout. X-Ray tracing. Batch size 1. Maximum concurrency set by WorkerConcurrency '
   '(default 5)',
   'Regional. AWS spreads the function across AZs',
-  'Reads the Tavily key from C19. Calls Bedrock (C20)',
-  'Runs the four specialist agents and the coordinator, which bounds Bedrock and Tavily spend.'),
+  'Reads the Tavily key (C23), prompts (C15) and model access (C24)',
+  'Runs the LangGraph4j trip graph: four ReAct agents in parallel, then a coordinator. Uses LangChain4j '
+  'Bedrock chat model, Resilience4j circuit breakers, and the policy search tool.'),
  ('C12',
   'Job queue',
   'Amazon SQS (standard)',
@@ -145,7 +150,7 @@ INVENTORY = [('C01',
   'Retention 14 days. SSE-SQS',
   'Regional',
   'SSE-SQS encryption',
-  'Messages here trigger alarm A1.'),
+  'Messages here trigger alarm C21 (A1).'),
  ('C14',
   'Trip runs table',
   'Amazon DynamoDB',
@@ -153,58 +158,93 @@ INVENTORY = [('C01',
   'on. Deletion protection in prod',
   'Regional, replicated across 3 AZs by DynamoDB',
   'Encrypted at rest. IAM access only',
-  'Stores each run and its event log.'),
+  'Stores each run, its status, and its event log.'),
  ('C15',
+  'Prompt, settings and policy bucket',
+  'Amazon S3',
+  'Private, versioned, SSE-S3. Prefix v1/: prompts/*.md (agent roles, tasks, tools, safety), '
+  'config/runtime.yml (model id, turn and search budgets, breaker thresholds), rag/ (policy PDFs and Excel), '
+  'models/ (embedding model files)',
+  'Regional bucket',
+  'Encrypted at rest. Public access blocked. Worker reads prompts; ingest reads rag/ and models/',
+  'Worker caches prompts for PROMPTS_CACHE_SECONDS (default 300). Falls back to copies bundled in the jar if '
+  'a file is missing.'),
+ ('C16',
+  'Ingest function',
+  'AWS Lambda (Java 21, x86_64)',
+  '2048 MB. 300 s timeout. X-Ray tracing. Triggered by S3 ObjectCreated on v1/rag/',
+  'Regional',
+  'Reads only v1/rag/ and v1/models/. Writes only C17',
+  'Extracts text (PDFBox for PDF, POI for Excel), chunks it, embeds each chunk in-process, and replaces the '
+  "document's chunks."),
+ ('C17',
+  'Policy chunk table',
+  'Amazon DynamoDB',
+  'On-demand. pk DOC#<document id>, sk CHUNK#<index>. Stores chunk text, source, location, and a float32 '
+  'vector. Point-in-time recovery on. SSE on',
+  'Regional, replicated across 3 AZs',
+  'Encrypted at rest. IAM access only',
+  'Read by the worker for search_policies. The worker scans it and caches the index for RAG_CACHE_SECONDS.'),
+ ('C18',
+  'Embedding model',
+  'Open-source model (all-MiniLM-L6-v2, ONNX), stored in C15',
+  '384-dimension embeddings through ONNX Runtime and DJL tokenizers. No external API',
+  'Runs inside C11 and C16',
+  'No data leaves the function',
+  'Copied from S3 to /tmp on cold start (about 90 MB). No per-request cost and no account quota.'),
+ ('C19',
   'Log groups',
   'Amazon CloudWatch Logs',
-  'One group each for the API function and worker. Retention 30 days',
+  'One group each for the API function, worker and ingest function. Retention 30 days',
   'Regional',
-  'The API and worker log errors, not request bodies',
-  'Look here first for worker errors and failed API calls.'),
- ('C16',
+  'The functions log run and error events, not prompt or trip text',
+  'Look here first for worker and ingest errors.'),
+ ('C20',
   'Alert topic',
   'Amazon SNS (topic)',
-  'Receives alarms A1 to A3. Optional email subscription from AlertEmail',
+  'Receives alarms C21. Optional email subscription from AlertEmail',
   'Regional',
   'Topic policy default',
   'Empty AlertEmail creates the topic with no subscriber.'),
- ('C17',
+ ('C21',
   'Alarms',
   'Amazon CloudWatch alarms',
   'A1 dead-letter queue has messages (more than 0 in 5 min). A2 worker errors (3 or more in 5 min). A3 API '
   '5xx (5 or more in 5 min)',
   'Regional',
-  'Alarm actions go to C16',
+  'Alarm actions go to C20',
   'Treat missing data as not breaching.'),
- ('C18',
+ ('C22',
   'Execution roles',
   'AWS IAM roles (created by SAM)',
-  'One role each for C10, C11 and C17. Each policy is limited to the table, queue or secret it needs',
+  'One role each for C10, C11 and C16. Each policy is limited to the table, queue, bucket prefix or secret '
+  'it needs',
   'Global (IAM)',
   'Deployment needs CAPABILITY_IAM',
-  'The worker may invoke the Bedrock model in any region through an inference profile (wildcard).'),
- ('C19',
+  'Model access is granted by the Bedrock invoke statement on the worker role.'),
+ ('C23',
   'Search API key',
   'AWS Secrets Manager (created outside the stack)',
   'Holds the Tavily API key. Its ARN is passed as TavilySecretArn',
   'Regional',
   'Read only by the worker role',
   'Not stored in GitHub or in the repository.'),
- ('C20',
-  'Language model',
-  'Amazon Bedrock',
-  'Model from BedrockModelId. Template default ca.amazon.nova-lite-v1:0. Optional guardrail (ID and version)',
+ ('C24',
+  'Chat model',
+  'Amazon Bedrock (Converse API, through LangChain4j)',
+  'Model from runtime.yml (model.id), default ca.amazon.nova-lite-v1:0. Optional guardrail (ID and version)',
   'Regional (model access is enabled per account and region)',
   'Worker role allows InvokeModel and ApplyGuardrail only',
-  'Docs suggest a Claude model. Confirm model access in the console before deploying.'),
- ('C21',
+  "Circuit breaker 'bedrock' stops calls after repeated failures. Docs suggest a Claude model; confirm "
+  'access.'),
+ ('C25',
   'Deploy pipeline',
   'GitHub Actions with AWS OIDC role',
-  'Builds and tests the app. cfn-lint on the template. sam deploy. scripts/deploy-web.sh publishes the web '
-  'app and invalidates CloudFront',
+  'Builds and tests (Maven, npm), cfn-lint, sam deploy, then uploads prompts, the embedding model and policy '
+  'documents, and publishes the web app',
   'Outside AWS runtime',
   'No long-lived AWS keys. Role from AWS_DEPLOY_ROLE_ARN',
-  'Smoke test expects 401 from an unauthenticated API call.')]
+  'Smoke test expects a 404 from a read of a nonexistent trip.')]
 
 NOT_CREATED = [
     ("VPC, subnets, route tables", "Lambda, DynamoDB, SQS, SNS and S3 run on AWS-managed networking. No private subnets or private database."),
@@ -222,41 +262,62 @@ FLOWS = [('Load the web app',
   'Browser to CloudFront, which reads from S3 (C07) through Origin Access Control (C08). index.html is never '
   'cached.'),
  ('Plan a trip',
-  'Browser to CloudFront (C03), then /api/* to API Gateway (C09). No sign-in is checked. The API function '
-  '(C10) writes a run to C14 and queues a job in C12. The worker (C11) reads the job, calls Bedrock (C20) '
-  'and Tavily (C19), writes each event to C14, and sets the run to completed or partial. The browser polls '
-  'the events.'),
+  'Browser to CloudFront (C03), then /api/* to API Gateway (C09). The API function (C10) writes a run to C14 '
+  'and queues a job in C12. The worker (C11) runs the LangGraph4j trip graph. Four ReAct agents run in '
+  'parallel: each one loops between the chat model (C24) and its tools, web_search (Tavily, C23) and '
+  'search_policies (C17, with embeddings from C18). Each model and search call goes through a circuit '
+  'breaker. Briefings are shared through graph state, the coordinator merges them, and each step is written '
+  'to C14. The browser polls the events.'),
+ ('Prompts and settings',
+  'The worker reads prompt templates and runtime.yml from C15 and caches them. Edits take effect within the '
+  'cache window. Circuit breaker thresholds apply after the next cold start.'),
+ ('Policy document upload',
+  'An operator uploads a PDF or Excel file to v1/rag/ in C15. The ingest function (C16) extracts the text, '
+  "chunks it, embeds each chunk with C18, and replaces that document's chunks in C17."),
+ ('Chat follow-up',
+  'A follow-up question runs a single ReAct agent with the chat search budget, using the findings already '
+  'stored in C14.'),
  ('Failed job',
-  'SQS retries the job up to 3 times, then moves it to the dead-letter queue (C13). Alarm A1 fires and '
-  'emails the alert topic (C16).')]
+  'SQS retries the job up to 3 times, then moves it to the dead-letter queue (C13). Alarm C21 fires and '
+  'notifies the alert topic (C20).')]
 
 SECURITY = ['There is no sign-in. The API and web app are open to anyone who can reach the CloudFront URL, unless the '
  'WAF allowlist is enabled.',
- 'The web app bucket is private and reachable only through CloudFront. Insecure transport is denied.',
+ 'Web search results and policy excerpts are labelled as data, not instructions. The shared safety rules '
+ '(prompts/system-safety.md) apply to every agent.',
+ 'Search budgets, policy-search budgets and turn limits are enforced in code, not left to the prompt.',
+ "Circuit breakers stop calls to a failing model or search service, so failures don't turn into retry "
+ 'storms.',
+ 'The prompt, settings and policy bucket is private and reached only by the worker and ingest roles. '
+ 'Insecure transport is denied.',
+ 'Graph state holds only serializable data. Per-run objects (listeners, run contexts) stay in a process '
+ 'registry, not in state.',
  'Security headers (HSTS, CSP, frame DENY, nosniff) are set at the edge.',
  'WAF (when enabled) blocks every IP outside the allowlist, and adds AWS managed rules and a per-IP rate '
  'limit.',
- 'Deploys use GitHub OIDC, not stored AWS keys.',
- 'Encryption at rest is on for DynamoDB, SQS and S3. Point-in-time recovery is on for the runs table. '
- 'Production tables have deletion protection.']
+ 'Deploys use GitHub OIDC, not stored AWS keys. Encryption at rest is on for DynamoDB, SQS and S3.']
 
 RISKS = ['No sign-in. Anyone with the URL can create trips, which spends Bedrock and Tavily budget. Enable the WAF '
  'allowlist (EnableWaf=true with AllowedCidrs) or add authentication before sharing the URL publicly.',
+ 'Lambda package size. The worker and ingest functions unzip to about 228 MB against a 250 MB limit. Adding '
+ 'more dependencies, or bundling the model in the jar again, will break deployment. The model is loaded from '
+ 'S3 for this reason.',
+ 'Policy retrieval scans the whole chunk table into memory and caches it. That is fine for a small policy '
+ 'corpus, but a larger corpus needs a real vector index.',
+ 'Re-ingesting a document deletes its old chunks, then writes the new ones. The two steps are not atomic, so '
+ 'a failure in the middle can leave a partial set until the next upload.',
+ 'Bedrock embeddings were not usable: the on-demand Titan Text Embeddings V2 quota is 0 and not adjustable '
+ "through Service Quotas. Embeddings now run in-process, so this doesn't block RAG.",
  'WAF location. The WAF web ACL uses CLOUDFRONT scope and must be created in us-east-1. samconfig.toml '
- 'deploys to ca-central-1 by default, so EnableWaf=true will fail there. Set the pipeline region to '
- 'us-east-1, or disable the WAF in that region.',
- 'Region mismatch in docs. samconfig.toml uses ca-central-1. The guides in docs/ say us-east-1. Pick one and '
- 'set AWS_REGION to match the Bedrock model access you enabled.',
- 'CFN lint. cfn-lint reports errors on the WAF IPSetReferenceStatement properties (ARN and Arn spelling, '
- 'lines 510 to 513 of infra/template.yaml). CI runs cfn-lint, so the deploy job will not pass until this is '
- 'resolved. This block was already uncommitted before these changes. It has not been fixed here because the '
- 'correct property spelling needs confirming against the current CloudFormation spec.',
- 'No VPC. Functions and tables are reached over public AWS endpoints. This is fine for the current design, '
- 'but a private network would need a VPC, endpoints and a NAT gateway.',
- 'The Bedrock model. The template default is a Nova model, and the guides suggest a Claude model. Confirm '
- 'the model ID and access in the account before the first trip.',
- 'Legacy EKS path. deploy/k8s and docs/DEPLOY-EKS-VASOLAI.md still describe an OIDC sign-in that no longer '
- 'exists. The Spring prod profile is open. CI does not deploy this path.']
+ 'deploys to ca-central-1 by default, so EnableWaf=true will fail there.',
+ 'CFN lint. cfn-lint reports errors on the WAF IPSetReferenceStatement properties (ARN and Arn spelling). CI '
+ 'runs cfn-lint, so the deploy job will not pass until this is resolved.',
+ 'Runtime settings. Model id, turn budgets and search budgets reload within the prompt cache window. Circuit '
+ 'breaker thresholds are read at cold start.',
+ 'The legacy EKS path. deploy/k8s and docs/DEPLOY-EKS-VASOLAI.md still describe the old Spring harness and '
+ 'an OIDC sign-in that no longer exists. CI does not deploy this path.',
+ 'The chat model. The default is Amazon Nova Lite, and some guides suggest a Claude model. Confirm the model '
+ 'id and access in the account before the first trip.']
 
 EKS_NOTE = (
     "Not part of the Lambda stack. docs/DEPLOY-EKS-VASOLAI.md describes an alternative in which eksctl creates a VPC "
@@ -329,9 +390,9 @@ def draw_diagram(path):
     dlq = _box(ax, 100, 30, 16, 10, "DLQ (SQS)", "after 3 failures", "queue")
 
     runs = _box(ax, 46, 14, 24, 10, "Trip runs (DynamoDB)", "Runs and event log, PITR", "data")
-    worker = _box(ax, 80, 14, 16, 10, "Research worker", "Java 21, 900 s", "compute")
+    worker = _box(ax, 80, 14, 16, 10, "Agent worker", "LangGraph4j, Java 21\n2048 MB, 900 s", "compute")
 
-    bedrock = _box(ax, 46, -2, 24, 10, "Amazon Bedrock", "Specialist agents and\ncoordinator", "ext")
+    bedrock = _box(ax, 46, -2, 24, 10, "Amazon Bedrock", "Chat model via\nConverse API", "ext")
     tavily = _box(ax, 80, -2, 16, 10, "Tavily + Secrets", "Search key in\nSecrets Manager", "ext")
     alarms = _box(ax, 100, -2, 16, 10, "CloudWatch", "Logs (30 days),\nalarms, X-Ray", "ops")
 
@@ -340,7 +401,12 @@ def draw_diagram(path):
     _arrow(ax, users["r"], r53["l"], "DNS")
     _arrow(ax, r53["r"], cf["l"])
     _arrow(ax, (58, 64), (58, 56), "/api/*")
+    bucket = _box(ax, 2, 30, 26, 10, "Prompt + policy bucket (S3)", "Prompts, runtime.yml, policy docs,\nembedding model", "data")
+    ingest = _box(ax, 2, 14, 26, 10, "Ingest function (Java 21)", "Policy PDF and Excel to chunks,\nembedded in-process", "compute")
+    chunks = _box(ax, 2, -2, 26, 10, "Policy chunks (DynamoDB)", "Chunk text and vectors", "data")
     _arrow(ax, api["b"], apil["t"], "")
+    _arrow(ax, bucket["b"], ingest["t"], "upload")
+    _arrow(ax, ingest["b"], chunks["t"], "chunks")
     _arrow(ax, apil["r"], sqs["l"], "job")
     _arrow(ax, sqs["b"], worker["t"], "")
     _arrow(ax, sqs["r"], dlq["l"], "")

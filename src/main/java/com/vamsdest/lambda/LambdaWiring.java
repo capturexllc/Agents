@@ -120,9 +120,26 @@ final class LambdaWiring {
         return new com.vamsdest.rag.IngestService(S3Client.create(), embedder(), chunks);
     }
 
+    /** Copies the embedding model from the prompt bucket to /tmp once per container, then loads it. */
     private static com.vamsdest.rag.Embedder embedder() {
-        return new com.vamsdest.rag.BedrockEmbedder(BedrockRuntimeClient.create(),
-                envOrDefault("EMBEDDING_MODEL_ID", "amazon.titan-embed-text-v2:0"));
+        java.nio.file.Path directory = java.nio.file.Paths.get("/tmp/embedding-model");
+        java.nio.file.Path model = directory.resolve("all-minilm-l6-v2.onnx");
+        java.nio.file.Path tokenizer = directory.resolve("all-minilm-l6-v2-tokenizer.json");
+        if (!java.nio.file.Files.exists(model) || !java.nio.file.Files.exists(tokenizer)) {
+            String bucket = env("PROMPTS_BUCKET");
+            String prefix = envOrEmpty("PROMPTS_PREFIX");
+            try {
+                java.nio.file.Files.createDirectories(directory);
+                S3Client s3 = S3Client.create();
+                s3.getObject(software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
+                        .bucket(bucket).key(prefix + "models/all-minilm-l6-v2.onnx").build(), model);
+                s3.getObject(software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
+                        .bucket(bucket).key(prefix + "models/all-minilm-l6-v2-tokenizer.json").build(), tokenizer);
+            } catch (java.io.IOException exception) {
+                throw new IllegalStateException("Could not copy the embedding model from S3", exception);
+            }
+        }
+        return com.vamsdest.rag.LocalEmbedder.fromFiles(model, tokenizer);
     }
 
     private static DynamoDbClient dynamo() {

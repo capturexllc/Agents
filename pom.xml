@@ -23,6 +23,7 @@
         <langchain4j.version>1.23.0</langchain4j.version>
         <resilience4j.version>2.4.0</resilience4j.version>
         <pdfbox.version>3.0.8</pdfbox.version>
+        <langchain4j.embeddings.version>1.23.0-beta33</langchain4j.embeddings.version>
         <poi.version>6.0.0</poi.version>
     </properties>
 
@@ -95,6 +96,12 @@
             <artifactId>langchain4j-bedrock</artifactId>
             <version>${langchain4j.version}</version>
         </dependency>
+        <!-- Open-source embeddings (all-MiniLM-L6-v2, ONNX, bundled in the jar). Runs in-process: no API quota. -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
+            <version>${langchain4j.embeddings.version}</version>
+        </dependency>
         <!-- RAG ingestion: PDF text (PDFBox) and Excel rows (POI). -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
@@ -158,6 +165,19 @@
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
                                         <exclude>module-info.class</exclude>
+                                        <!-- Lambda unzipped size limit is 250 MB. Keep only the Linux x86_64 native libraries. -->
+                                        <exclude>ai/onnxruntime/native/osx-*/**</exclude>
+                                        <exclude>ai/onnxruntime/native/win-*/**</exclude>
+                                        <exclude>ai/onnxruntime/native/linux-aarch64/**</exclude>
+                                        <exclude>native/lib/osx-*/**</exclude>
+                                        <exclude>native/lib/win-*/**</exclude>
+                                        <exclude>native/lib/linux-aarch64/**</exclude>
+                                        <exclude>**/*.dSYM/**</exclude>
+                                        <exclude>com/sun/jna/win32*/**</exclude>
+                                        <exclude>com/sun/jna/darwin*/**</exclude>
+                                        <exclude>com/sun/jna/sunos*/**</exclude>
+                                        <exclude>all-minilm-l6-v2.onnx</exclude>
+                                        <exclude>all-minilm-l6-v2-tokenizer.json</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

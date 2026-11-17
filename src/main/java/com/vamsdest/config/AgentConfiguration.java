@@ -1,7 +1,8 @@
 package com.vamsdest.config;
 
 import com.vamsdest.agent.ModelFactory;
-import com.vamsdest.rag.BedrockEmbedder;
+import com.vamsdest.rag.LocalEmbedder;
+import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
 import com.vamsdest.rag.ChunkStore;
 import com.vamsdest.rag.Embedder;
 import com.vamsdest.rag.PolicyIndex;
@@ -47,9 +48,9 @@ public class AgentConfiguration {
 
     /** Policy corpus for the search_policies tool. Local runs use an empty corpus; the worker uses DynamoDB. */
     @Bean
-    Embedder embedder(BedrockRuntimeClient client,
-            @Value("${vamsdest.rag.embedding-model-id:amazon.titan-embed-text-v2:0}") String modelId) {
-        return new BedrockEmbedder(client, modelId);
+    Embedder embedder() {
+        // Local runs use the model bundled in the dependency jar.
+        return new LocalEmbedder(() -> new AllMiniLmL6V2EmbeddingModel());
     }
 
     @Bean

@@ -241,7 +241,7 @@ Resources:
       Handler: com.vamsdest.lambda.WorkerHandler::handleRequest
       CodeUri: ../build/lambda/
       Architectures: [x86_64]
-      MemorySize: 1024
+      MemorySize: 2048
       Timeout: 900
       Tracing: Active
       Environment:
@@ -259,7 +259,6 @@ Resources:
           PROMPTS_CACHE_SECONDS: "300"
           RAG_TABLE_NAME: !Ref RagChunkTable
           RAG_CACHE_SECONDS: "300"
-          EMBEDDING_MODEL_ID: amazon.titan-embed-text-v2:0
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref RunTable
@@ -284,10 +283,6 @@ Resources:
               Effect: Allow
               Action: s3:ListBucket
               Resource: !GetAtt PromptBucket.Arn
-            - Sid: EmbedPolicyText
-              Effect: Allow
-              Action: bedrock:InvokeModel
-              Resource: arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0
             - Sid: UseGuardrail
               Effect: Allow
               Action: bedrock:ApplyGuardrail
@@ -314,13 +309,15 @@ Resources:
       Handler: com.vamsdest.lambda.IngestHandler::handleRequest
       CodeUri: ../build/lambda/
       Architectures: [x86_64]
-      MemorySize: 1536
+      MemorySize: 2048
       Timeout: 300
       Tracing: Active
       Environment:
         Variables:
           RAG_TABLE_NAME: !Ref RagChunkTable
-          EMBEDDING_MODEL_ID: amazon.titan-embed-text-v2:0
+          # Name, not !Ref, so the bucket notification does not create a cycle.
+          PROMPTS_BUCKET: !Sub ${AppName}-${Environment}-prompts-${AWS::AccountId}-${AWS::Region}
+          PROMPTS_PREFIX: "v1/"
           JAVA_TOOL_OPTIONS: "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
       Policies:
         - DynamoDBCrudPolicy:
@@ -331,10 +328,10 @@ Resources:
               Action: s3:GetObject
               # Built from the bucket name, not !GetAtt, so the bucket notification does not create a cycle.
               Resource: !Sub arn:aws:s3:::${AppName}-${Environment}-prompts-${AWS::AccountId}-${AWS::Region}/v1/rag/*
-            - Sid: EmbedPolicyText
+            - Sid: ReadEmbeddingModel
               Effect: Allow
-              Action: bedrock:InvokeModel
-              Resource: arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0
+              Action: s3:GetObject
+              Resource: !Sub arn:aws:s3:::${AppName}-${Environment}-prompts-${AWS::AccountId}-${AWS::Region}/v1/models/*
       Events:
         PolicyDocumentUploaded:
           Type: S3
