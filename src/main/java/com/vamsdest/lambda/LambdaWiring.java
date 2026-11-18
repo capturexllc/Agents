@@ -23,6 +23,7 @@ import java.util.concurrent.Executors;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -108,16 +109,19 @@ final class LambdaWiring {
         if (table.isBlank()) {
             return null;
         }
-        com.vamsdest.rag.Embedder embedder = embedder();
-        com.vamsdest.rag.ChunkStore chunks = new com.vamsdest.rag.DynamoChunkStore(dynamo(), table);
-        return new com.vamsdest.rag.PolicyRetriever(embedder, new com.vamsdest.rag.PolicyIndex(chunks::loadAll,
-                java.time.Duration.ofSeconds(longEnv("RAG_CACHE_SECONDS", 300)), java.time.Clock.systemUTC()));
+        return new com.vamsdest.rag.PolicyRetriever(embedder(), vectorIndex(),
+                new com.vamsdest.rag.DynamoChunkStore(dynamo(), table));
     }
 
-    /** Used by the ingest function: reads uploaded documents, embeds them, and writes chunks to DynamoDB. */
+    /** Used by the ingest function: reads uploaded documents, embeds them, and writes text and vectors. */
     static com.vamsdest.rag.IngestService ingestService() {
         com.vamsdest.rag.ChunkStore chunks = new com.vamsdest.rag.DynamoChunkStore(dynamo(), env("RAG_TABLE_NAME"));
-        return new com.vamsdest.rag.IngestService(S3Client.create(), embedder(), chunks);
+        return new com.vamsdest.rag.IngestService(S3Client.create(), embedder(), chunks, vectorIndex());
+    }
+
+    private static com.vamsdest.rag.VectorIndex vectorIndex() {
+        return new com.vamsdest.rag.S3VectorIndex(S3VectorsClient.create(), env("RAG_VECTOR_BUCKET"),
+                env("RAG_VECTOR_INDEX"));
     }
 
     /** Copies the embedding model from the prompt bucket to /tmp once per container, then loads it. */

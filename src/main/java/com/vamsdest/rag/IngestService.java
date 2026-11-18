@@ -7,8 +7,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
 /**
- * Ingests one document from S3: read it, split it into chunks, embed each chunk, and replace the document's chunks in
- * the store. Re-uploading a file replaces its old chunks.
+ * Ingests one document from S3: read it, split it into chunks, embed each chunk, store the text in the chunk store, and
+ * store the vectors in the vector index. Re-uploading a file replaces its old chunks and vectors.
  */
 public final class IngestService {
     static final int MAX_CHUNK_CHARS = 1000;
@@ -17,11 +17,13 @@ public final class IngestService {
     private final S3Client s3;
     private final Embedder embedder;
     private final ChunkStore store;
+    private final VectorIndex vectors;
 
-    public IngestService(S3Client s3, Embedder embedder, ChunkStore store) {
+    public IngestService(S3Client s3, Embedder embedder, ChunkStore store, VectorIndex vectors) {
         this.s3 = s3;
         this.embedder = embedder;
         this.store = store;
+        this.vectors = vectors;
     }
 
     /** Returns the number of chunks stored, or 0 when the file type is not a supported document. */
@@ -34,13 +36,21 @@ public final class IngestService {
         String docId = docId(fileName);
 
         List<ChunkStore.StoredChunk> chunks = new ArrayList<>();
+        List<VectorIndex.Entry> entries = new ArrayList<>();
         int index = 0;
         for (DocumentReader.Section section : DocumentReader.read(fileName, bytes)) {
             for (String text : Chunker.split(section.text(), MAX_CHUNK_CHARS, CHUNK_OVERLAP)) {
-                chunks.add(new ChunkStore.StoredChunk(docId, index++, fileName, section.location(), text,
-                        embedder.embed(text)));
+                String chunkKey = ChunkStore.key(docId, index);
+                chunks.add(new ChunkStore.StoredChunk(docId, index, fileName, section.location(), text));
+                entries.add(new VectorIndex.Entry(chunkKey, embedder.embed(text)));
+                index++;
             }
         }
+        List<String> previous = store.keysOf(docId);
+        if (!previous.isEmpty()) {
+            vectors.delete(previous);
+        }
+        vectors.put(entries);
         store.replaceDocument(docId, chunks);
         return chunks.size();
     }

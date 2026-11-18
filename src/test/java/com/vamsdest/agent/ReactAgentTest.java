@@ -12,7 +12,7 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import com.vamsdest.rag.ChunkStore;
-import com.vamsdest.rag.PolicyIndex;
+import com.vamsdest.rag.VectorIndex;
 import com.vamsdest.rag.PolicyRetriever;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.time.Clock;
@@ -170,10 +170,37 @@ class ReactAgentTest {
         model.replies.add(() -> ScriptedModel.response(new AiMessage(List.of(lookup))));
         model.reply("Refunds are free within 48 hours [P1].");
         RuntimeSettings settings = new RuntimeSettings("model", 500, 8, 4, 2, 50, 10, 5, 30, 3);
-        PolicyIndex index = new PolicyIndex(() -> List.of(new ChunkStore.StoredChunk("travel-policy", 0,
-                "travel-policy.pdf", "page 2", "Cancellations within 48 hours are free.", new float[] {1f})),
-                Duration.ofMinutes(5), Clock.systemUTC());
-        PolicyRetriever policies = new PolicyRetriever(text -> new float[] {1f}, index);
+        ChunkStore chunks = new ChunkStore() {
+            @Override
+            public void replaceDocument(String docId, List<StoredChunk> stored) {
+            }
+
+            @Override
+            public List<String> keysOf(String docId) {
+                return List.of();
+            }
+
+            @Override
+            public List<StoredChunk> getAll(List<String> keys) {
+                return List.of(new ChunkStore.StoredChunk("travel-policy", 0, "travel-policy.pdf", "page 2",
+                        "Cancellations within 48 hours are free."));
+            }
+        };
+        VectorIndex index = new VectorIndex() {
+            @Override
+            public void put(List<Entry> entries) {
+            }
+
+            @Override
+            public void delete(List<String> keys) {
+            }
+
+            @Override
+            public List<Match> query(float[] vector, int topK) {
+                return List.of(new Match("travel-policy#000000", 0.1));
+            }
+        };
+        PolicyRetriever policies = new PolicyRetriever(text -> new float[] {1f}, index, chunks);
         ReactAgent agent = new ReactAgent(model, new FakeSearch(), policies, breakers(settings), "web",
                 "policy lookup");
 

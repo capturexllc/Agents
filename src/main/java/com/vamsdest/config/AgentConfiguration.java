@@ -5,8 +5,8 @@ import com.vamsdest.rag.LocalEmbedder;
 import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
 import com.vamsdest.rag.ChunkStore;
 import com.vamsdest.rag.Embedder;
-import com.vamsdest.rag.PolicyIndex;
 import com.vamsdest.rag.PolicyRetriever;
+import com.vamsdest.rag.VectorIndex;
 import java.time.Clock;
 import com.vamsdest.agent.PromptCatalog;
 import com.vamsdest.agent.RuntimeSettings;
@@ -55,8 +55,7 @@ public class AgentConfiguration {
 
     @Bean
     PolicyRetriever policyRetriever(Embedder embedder) {
-        return new PolicyRetriever(embedder,
-                new PolicyIndex(ChunkStore.EMPTY::loadAll, Duration.ofMinutes(5), Clock.systemUTC()));
+        return new PolicyRetriever(embedder, VectorIndex.EMPTY, ChunkStore.EMPTY);
     }
 
     @Bean

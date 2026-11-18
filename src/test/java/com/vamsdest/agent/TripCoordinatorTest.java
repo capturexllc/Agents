@@ -4,8 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.vamsdest.api.TripRequest;
-import com.vamsdest.rag.PolicyIndex;
+import com.vamsdest.rag.ChunkStore;
 import com.vamsdest.rag.PolicyRetriever;
+import com.vamsdest.rag.VectorIndex;
 import java.time.Clock;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -104,8 +105,7 @@ class TripCoordinatorTest {
             }
         };
         PromptCatalog prompts = new PromptCatalog(null, "", "", Duration.ofMinutes(5));
-        PolicyRetriever policies = new PolicyRetriever(text -> new float[] {1f},
-                new PolicyIndex(List::of, Duration.ofMinutes(5), Clock.systemUTC()));
+        PolicyRetriever policies = new PolicyRetriever(text -> new float[] {1f}, VectorIndex.EMPTY, ChunkStore.EMPTY);
         return new TripCoordinator(factory, (query -> List.of()), policies, store, executor, prompts, SETTINGS);
     }
 }

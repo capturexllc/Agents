@@ -1,20 +1,18 @@
 package com.vamsdest.rag;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 
 /**
- * DynamoDB chunk store. Keys: {@code pk = DOC#<docId>}, {@code sk = CHUNK#<index, zero padded>}. The vector is stored as
- * little-endian float32 bytes.
+ * Chunk text in DynamoDB. Keys: {@code pk = DOC#<docId>}, {@code sk = CHUNK#<index, zero padded>}. Vectors are not stored
+ * here; they live in the S3 Vectors index under the same {@code docId#index} key.
  */
 public final class DynamoChunkStore implements ChunkStore {
     private final DynamoDbClient dynamo;
@@ -27,72 +25,78 @@ public final class DynamoChunkStore implements ChunkStore {
 
     @Override
     public void replaceDocument(String docId, List<StoredChunk> chunks) {
-        String pk = "DOC#" + docId;
-        dynamo.queryPaginator(QueryRequest.builder()
-                        .tableName(table)
-                        .keyConditionExpression("pk = :pk")
-                        .expressionAttributeValues(Map.of(":pk", s(pk)))
-                        .projectionExpression("pk, sk")
-                        .build())
-                .items()
-                .forEach(item -> dynamo.deleteItem(DeleteItemRequest.builder()
-                        .tableName(table)
-                        .key(Map.of("pk", item.get("pk"), "sk", item.get("sk")))
-                        .build()));
+        for (String key : keysOf(docId)) {
+            StoredChunkKey parsed = StoredChunkKey.parse(key);
+            dynamo.deleteItem(DeleteItemRequest.builder()
+                    .tableName(table)
+                    .key(Map.of("pk", s(pk(docId)), "sk", s(sk(parsed.index()))))
+                    .build());
+        }
         for (StoredChunk chunk : chunks) {
             dynamo.putItem(PutItemRequest.builder()
                     .tableName(table)
                     .item(Map.of(
-                            "pk", s(pk),
-                            "sk", s(String.format("CHUNK#%06d", chunk.index())),
+                            "pk", s(pk(docId)),
+                            "sk", s(sk(chunk.index())),
                             "docId", s(docId),
                             "index", AttributeValue.builder().n(String.valueOf(chunk.index())).build(),
                             "source", s(chunk.source()),
                             "location", s(chunk.location()),
-                            "text", s(chunk.text()),
-                            "vector", AttributeValue.builder().b(SdkBytes.fromByteArray(toBytes(chunk.vector()))).build()))
+                            "text", s(chunk.text())))
                     .build());
         }
     }
 
     @Override
-    public List<StoredChunk> loadAll() {
-        List<StoredChunk> chunks = new ArrayList<>();
-        dynamo.scanPaginator(software.amazon.awssdk.services.dynamodb.model.ScanRequest.builder()
-                        .tableName(table).build())
+    public List<String> keysOf(String docId) {
+        List<String> keys = new ArrayList<>();
+        dynamo.queryPaginator(QueryRequest.builder()
+                        .tableName(table)
+                        .keyConditionExpression("pk = :pk")
+                        .expressionAttributeValues(Map.of(":pk", s(pk(docId))))
+                        .projectionExpression("#i")
+                        .expressionAttributeNames(Map.of("#i", "index"))
+                        .build())
                 .items()
-                .forEach(item -> {
-                    if (item.containsKey("vector")) {
-                        chunks.add(new StoredChunk(
-                                item.get("docId").s(),
-                                Integer.parseInt(item.get("index").n()),
-                                item.get("source").s(),
-                                item.get("location").s(),
-                                item.get("text").s(),
-                                fromBytes(item.get("vector").b().asByteArray())));
-                    }
-                });
+                .forEach(item -> keys.add(ChunkStore.key(docId, Integer.parseInt(item.get("index").n()))));
+        return keys;
+    }
+
+    @Override
+    public List<StoredChunk> getAll(List<String> keys) {
+        List<StoredChunk> chunks = new ArrayList<>();
+        for (String key : keys) {
+            StoredChunkKey parsed = StoredChunkKey.parse(key);
+            Map<String, AttributeValue> item = dynamo.getItem(GetItemRequest.builder()
+                    .tableName(table)
+                    .key(Map.of("pk", s(pk(parsed.docId())), "sk", s(sk(parsed.index()))))
+                    .consistentRead(true)
+                    .build()).item();
+            if (item != null && !item.isEmpty()) {
+                chunks.add(new StoredChunk(parsed.docId(), parsed.index(),
+                        item.get("source").s(), item.get("location").s(), item.get("text").s()));
+            }
+        }
         return chunks;
     }
 
-    static byte[] toBytes(float[] vector) {
-        ByteBuffer buffer = ByteBuffer.allocate(vector.length * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN);
-        for (float value : vector) {
-            buffer.putFloat(value);
-        }
-        return buffer.array();
+    private static String pk(String docId) {
+        return "DOC#" + docId;
     }
 
-    static float[] fromBytes(byte[] bytes) {
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
-        float[] vector = new float[bytes.length / Float.BYTES];
-        for (int index = 0; index < vector.length; index++) {
-            vector[index] = buffer.getFloat();
-        }
-        return vector;
+    private static String sk(int index) {
+        return String.format("CHUNK#%06d", index);
     }
 
     private static AttributeValue s(String value) {
         return AttributeValue.builder().s(value).build();
+    }
+
+    /** A parsed chunk key: {@code docId#index}. */
+    private record StoredChunkKey(String docId, int index) {
+        static StoredChunkKey parse(String key) {
+            int split = key.lastIndexOf('#');
+            return new StoredChunkKey(key.substring(0, split), Integer.parseInt(key.substring(split + 1)));
+        }
     }
 }

@@ -18,7 +18,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <aws.sdk.version>2.57.3</aws.sdk.version>
+        <aws.sdk.version>2.59.2</aws.sdk.version>
         <langgraph4j.version>1.9.9</langgraph4j.version>
         <langchain4j.version>1.23.0</langchain4j.version>
         <resilience4j.version>2.4.0</resilience4j.version>
@@ -79,6 +79,10 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3vectors</artifactId>
         </dependency>
         <!-- Agent orchestration: LangGraph4j (graph state machine), LangChain4j (Bedrock chat model, tool specs). -->
         <dependency>

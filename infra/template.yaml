@@ -154,6 +154,22 @@ Resources:
         SSEEnabled: true
       DeletionProtectionEnabled: !If [IsProd, true, false]
 
+  # Vector index for policy search (Amazon S3 Vectors). Pay-per-use, no servers. Each chunk's vector is stored under
+  # its chunk key; the text stays in RagChunkTable. Float32, 384 dimensions (all-MiniLM-L6-v2), cosine distance.
+  PolicyVectorBucket:
+    Type: AWS::S3Vectors::VectorBucket
+    Properties:
+      VectorBucketName: !Sub ${AppName}-${Environment}-policy-vectors-${AWS::AccountId}
+
+  PolicyVectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketName: !Sub ${AppName}-${Environment}-policy-vectors-${AWS::AccountId}
+      IndexName: policy-chunks
+      DataType: float32
+      Dimension: 384
+      DistanceMetric: cosine
+
   JobDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -258,6 +274,8 @@ Resources:
           PROMPTS_PREFIX: "v1/"
           PROMPTS_CACHE_SECONDS: "300"
           RAG_TABLE_NAME: !Ref RagChunkTable
+          RAG_VECTOR_BUCKET: !Sub ${AppName}-${Environment}-policy-vectors-${AWS::AccountId}
+          RAG_VECTOR_INDEX: policy-chunks
           RAG_CACHE_SECONDS: "300"
       Policies:
         - DynamoDBCrudPolicy:
@@ -275,6 +293,10 @@ Resources:
               Resource:
                 - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModelId}
                 - arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0
+            - Sid: SearchPolicyVectors
+              Effect: Allow
+              Action: s3vectors:QueryVectors
+              Resource: !Sub arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${AppName}-${Environment}-policy-vectors-${AWS::AccountId}/index/policy-chunks
             - Sid: ReadPromptStore
               Effect: Allow
               Action: s3:GetObject
@@ -315,6 +337,8 @@ Resources:
       Environment:
         Variables:
           RAG_TABLE_NAME: !Ref RagChunkTable
+          RAG_VECTOR_BUCKET: !Sub ${AppName}-${Environment}-policy-vectors-${AWS::AccountId}
+          RAG_VECTOR_INDEX: policy-chunks
           # Name, not !Ref, so the bucket notification does not create a cycle.
           PROMPTS_BUCKET: !Sub ${AppName}-${Environment}-prompts-${AWS::AccountId}-${AWS::Region}
           PROMPTS_PREFIX: "v1/"
@@ -328,6 +352,12 @@ Resources:
               Action: s3:GetObject
               # Built from the bucket name, not !GetAtt, so the bucket notification does not create a cycle.
               Resource: !Sub arn:aws:s3:::${AppName}-${Environment}-prompts-${AWS::AccountId}-${AWS::Region}/v1/rag/*
+            - Sid: WritePolicyVectors
+              Effect: Allow
+              Action:
+                - s3vectors:PutVectors
+                - s3vectors:DeleteVectors
+              Resource: !Sub arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${AppName}-${Environment}-policy-vectors-${AWS::AccountId}/index/policy-chunks
             - Sid: ReadEmbeddingModel
               Effect: Allow
               Action: s3:GetObject

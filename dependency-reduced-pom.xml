@@ -108,31 +108,37 @@
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>bedrockruntime</artifactId>
-      <version>2.57.3</version>
+      <version>2.59.2</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>dynamodb</artifactId>
-      <version>2.57.3</version>
+      <version>2.59.2</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>sqs</artifactId>
-      <version>2.57.3</version>
+      <version>2.59.2</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>secretsmanager</artifactId>
-      <version>2.57.3</version>
+      <version>2.59.2</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>s3</artifactId>
-      <version>2.57.3</version>
+      <version>2.59.2</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3vectors</artifactId>
+      <version>2.59.2</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -265,7 +271,7 @@
     <pdfbox.version>3.0.8</pdfbox.version>
     <langgraph4j.version>1.9.9</langgraph4j.version>
     <java.version>21</java.version>
-    <aws.sdk.version>2.57.3</aws.sdk.version>
+    <aws.sdk.version>2.59.2</aws.sdk.version>
     <poi.version>6.0.0</poi.version>
     <langchain4j.embeddings.version>1.23.0-beta33</langchain4j.embeddings.version>
     <resilience4j.version>2.4.0</resilience4j.version>
