@@ -1,3 +1,5 @@
+import { DestinationCarousel } from './home';
+import { AboutPage, COMPANY, PRODUCT, Page, PrivacyPage, SiteFooter, TermsPage } from './pages';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowDownRight,
@@ -14,6 +16,7 @@ import {
   Plane,
   Send,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { api } from './api';
 import { Markdown, plainPreview } from './markdown';
@@ -65,6 +68,15 @@ const agentBlueprint: Omit<AgentState, 'status' | 'message' | 'sources' | 'searc
   { id: 'taxi', name: 'Taxi & car', subtitle: 'Transfers, ride-hail, rental cars' },
 ];
 
+const chatSuggestions = [
+  'What’s the best time to go?',
+  'Give me a packing list',
+  'Is it safe to travel solo?',
+  'What’s the cheapest way around?',
+  'Find me quiet, off-the-grid spots',
+  'Turn this into a day-by-day plan',
+];
+
 const defaultAgents = (): AgentState[] => agentBlueprint.map((agent) => ({
   ...agent,
   status: 'idle',
@@ -91,6 +103,16 @@ function AgentIcon({ id, size = 18 }: { id: AgentId; size?: number }) {
   return <Compass size={size} strokeWidth={1.8} />;
 }
 
+function readPage(): Page {
+  const hash = window.location.hash.replace('#', '');
+  return hash === 'about' || hash === 'privacy' || hash === 'terms' ? hash : 'home';
+}
+
+function goTo(page: Page) {
+  window.location.hash = page === 'home' ? '' : page;
+  window.scrollTo({ top: 0 });
+}
+
 function App() {
   const [destination, setDestination] = useState('');
   const [origin, setOrigin] = useState('');
@@ -102,6 +124,9 @@ function App() {
   const [agents, setAgents] = useState(defaultAgents);
   const [tripStatus, setTripStatus] = useState<'idle' | 'planning' | 'completed' | 'partial' | 'error'>('idle');
   const [error, setError] = useState('');
+  const [page, setPage] = useState<Page>(readPage);
+  const [pane, setPane] = useState(0);
+  const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
@@ -109,6 +134,12 @@ function App() {
   const [pollKey, setPollKey] = useState(0);
   const cursorRef = useRef(0);
   const pendingChats = useRef(new Set<string>());
+
+  useEffect(() => {
+    const onHash = () => setPage(readPage());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
 
   // Polls the trip's event log. The cursor lives in a ref so restarting the loop (for example after a chat
@@ -158,7 +189,7 @@ function App() {
         if (page.status !== 'planning' && pendingChats.current.size === 0) return;
       } catch (cause) {
         if (stopped) return;
-        setError(cause instanceof Error ? cause.message : 'Lost connection to VamsDest. Retrying…');
+        setError(cause instanceof Error ? cause.message : 'Lost connection to Dreamhaven. Retrying…');
       }
       if (!stopped) timer = window.setTimeout(poll, 1500);
     };
@@ -196,14 +227,17 @@ function App() {
     } catch (cause) {
       setTripStatus('error');
       setAgents(defaultAgents());
-      setError(cause instanceof Error ? cause.message : 'Could not connect to VamsDest.');
+      setError(cause instanceof Error ? cause.message : 'Could not connect to Dreamhaven.');
     }
   }
 
-  async function sendMessage(event: FormEvent<HTMLFormElement>) {
+  function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!tripId || !chatInput.trim() || chatBusy) return;
-    const question = chatInput.trim();
+    void askQuestion(chatInput.trim());
+  }
+
+  async function askQuestion(question: string) {
+    if (!tripId || !question || chatBusy) return;
     setChatInput('');
     setChatMessages((current) => [...current, { role: 'user', content: question }]);
     setChatBusy(true);
@@ -223,20 +257,85 @@ function App() {
     }
   }
 
+  if (page !== 'home') {
+    return (
+      <div className="app-shell">
+        <header className="topbar">
+          <a className="brand" href="#" onClick={(event) => { event.preventDefault(); goTo('home'); }} aria-label={`${PRODUCT} home`}>
+            <span className="brand-mark"><Plane size={19} fill="currentColor" /></span>
+            <span className="brand-name">dream<span>haven</span></span>
+            <span className="brand-divider" />
+            <span className="brand-caption">BY {COMPANY.toUpperCase()}</span>
+          </a>
+          <nav className="topbar-nav" aria-label="Site">
+            <button type="button" onClick={() => goTo('about')} aria-current={page === 'about' ? 'page' : undefined}>About</button>
+            <button type="button" onClick={() => goTo('privacy')} aria-current={page === 'privacy' ? 'page' : undefined}>Privacy</button>
+            <button type="button" onClick={() => goTo('terms')} aria-current={page === 'terms' ? 'page' : undefined}>Terms</button>
+          </nav>
+        </header>
+        <main className="main-content legal-main">
+          {page === 'about' && <AboutPage />}
+          {page === 'privacy' && <PrivacyPage />}
+          {page === 'terms' && <TermsPage />}
+          <button type="button" className="signin-link legal-back" onClick={() => goTo('home')}>Back to planning <ArrowRight size={14} /></button>
+        </main>
+        <SiteFooter onNavigate={goTo} />
+      </div>
+    );
+  }
+
   const runningCount = agents.filter((agent) => agent.status === 'running' || agent.status === 'summarizing').length;
   const isBusy = tripStatus === 'planning' && (runningCount > 0 || !tripId);
+
+  const agentById = (id: string) => agents.find((agent) => agent.id === id);
+  const panes = [
+    { key: 'transport', label: 'Getting there', emoji: '✈️', agent: agentById('transport') },
+    { key: 'taxi', label: 'Getting around', emoji: '🚕', agent: agentById('taxi') },
+    { key: 'summary', label: 'Your escape plan', emoji: '🗺️', agent: undefined },
+    { key: 'destination', label: 'The place', emoji: '🌄', agent: agentById('destination') },
+    { key: 'stay', label: 'Stay & play', emoji: '🏡', agent: agentById('stay') },
+  ];
+  const current = panes[pane] ?? panes[0];
+  const renderBrief = (agent: AgentState) => (
+                <article className={`brief-card ${agent.status}`}>
+                  <div className="brief-card-heading"><span><AgentIcon id={agent.id} size={16} /></span><span>{agent.name}</span>{agent.status === 'running' || agent.status === 'summarizing' ? <LoaderCircle className="spin brief-spinner" size={15} /> : agent.status === 'completed' ? <Check size={15} className="brief-check" /> : null}</div>
+                  {agent.status === 'idle' ? <p className="brief-placeholder">Notes will appear while the agent researches.</p> : <div className="brief-summary"><Markdown text={agent.message} /></div>}
+                  {agent.searches.length > 0 && (
+                    <ul className="search-trail" aria-label={`${agent.name} searches`}>
+                      {agent.searches.map((query, index) => <li key={`${agent.id}-search-${index}`}>{query}</li>)}
+                    </ul>
+                  )}
+                  {agent.sources.length > 0 && (
+                    <div className="source-list">
+                      {agent.sources.map((source, index) => {
+                        const href = sourceHref(source.url);
+                        return <div className="source-item" key={`${source.title}-brief-${index}`}>
+                          {href ? <a href={href} target="_blank" rel="noreferrer">{source.title}<ArrowRight size={13} /></a> : <span>{source.title}</span>}
+                          <p>{source.excerpt}</p>
+                          {source.retrievedAt && <time dateTime={source.retrievedAt}>Retrieved {new Date(source.retrievedAt).toLocaleString()}</time>}
+                        </div>;
+                      })}
+                    </div>
+                  )}
+                </article>
+  );
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="VamsDest home">
+        <a className="brand" href="#" onClick={(event) => { event.preventDefault(); goTo('home'); }} aria-label={`${PRODUCT} home`}>
           <span className="brand-mark"><Plane size={19} fill="currentColor" /></span>
-          <span className="brand-name">vams<span>dest</span></span>
+          <span className="brand-name">dream<span>haven</span></span>
           <span className="brand-divider" />
-          <span className="brand-caption">TRAVEL STUDIO</span>
+          <span className="brand-caption">BY {COMPANY.toUpperCase()}</span>
         </a>
+        <nav className="topbar-nav" aria-label="Site">
+          <button type="button" onClick={() => goTo('about')}>About</button>
+          <button type="button" onClick={() => goTo('privacy')}>Privacy</button>
+          <button type="button" onClick={() => goTo('terms')}>Terms</button>
+        </nav>
         <div className="topbar-right">
-          <span className="live-indicator"><span /> {tripStatus === 'planning' ? 'RESEARCH IN PROGRESS' : 'YOUR TRAVEL DESK'}</span>
+          <span className="live-indicator"><span /> {tripStatus === 'planning' ? 'RESEARCH IN PROGRESS' : 'YOUR PRIVATE DESK'}</span>
           <button className="avatar" type="button" aria-label="Traveler profile">V</button>
         </div>
       </header>
@@ -244,12 +343,16 @@ function App() {
       <main id="top" className="main-content">
         <section className="workspace-intro">
           <div className="intro-copy">
-            <p className="eyebrow"><Sparkles size={14} /> YOUR NEXT CHAPTER, WELL PLANNED</p>
-            <h1>Where to <em>next?</em></h1>
-            <p className="intro-subtitle">Give us a place and a few dates. We’ll get the details moving.</p>
+            <p className="eyebrow"><Sparkles size={14} /> PACK YOUR CURIOSITY</p>
+            <h1>Let’s get you <em>lost</em> (on purpose).</h1>
+            <p className="intro-subtitle">Private, off-the-grid escapes planned by live research agents: the quiet coast, the hidden valley, the cabin with no Wi-Fi. Tell us where. We’ll handle the homework. You bring the sunscreen.</p>
           </div>
-          <div className="season-note"><span>01</span><span className="season-rule" /><span>THE WORLD IS OPEN</span></div>
         </section>
+
+        <DestinationCarousel onPick={(name) => {
+          setDestination(name);
+          document.getElementById('destination')?.focus();
+        }} />
 
         <section className="workspace-grid" aria-label="Trip planning workspace">
           <div className="left-column">
@@ -375,77 +478,97 @@ function App() {
 
         <section className="results-section" aria-live="polite">
           <div className="results-heading">
-            <div><span className="section-kicker">LIVE BRIEFING</span><h2>{tripStatus === 'completed' ? 'Your trip, taking shape' : 'Your travel brief'}</h2></div>
+            <div><span className="section-kicker">LIVE BRIEFING</span><h2>{tripStatus === 'completed' ? 'Your escape, taking shape' : 'Your travel brief'}</h2></div>
             <button className="text-button" type="button" onClick={() => setShowDetails((current) => !current)}>
               {showDetails ? 'Hide details' : 'How this works'} <ChevronDown className={showDetails ? 'rotate' : ''} size={16} />
             </button>
           </div>
-          {showDetails && <p className="details-note">Each specialist is an AI agent that chooses its own live web searches, reads the results, and keeps searching until it has enough evidence. A coordinator then merges their findings. Every recommendation links its sources with retrieval times. Prices and availability are research leads, not confirmed offers. VamsDest never books or purchases travel.</p>}
-          {tripSummary && <article className="package-summary"><span className="section-kicker">COORDINATED PACKAGE BRIEF</span><Markdown text={tripSummary} /></article>}
-
+          {showDetails && <p className="details-note">Each specialist is an AI agent that chooses its own live web searches, reads the results, and keeps searching until it has enough evidence. A coordinator then merges their findings. Every recommendation links its sources with retrieval times. Prices and availability are research leads, not confirmed offers. Dreamhaven never books or purchases travel.</p>}
           {tripStatus === 'idle' && !tripId ? (
             <div className="empty-brief"><span className="empty-symbol"><ArrowDownRight size={20} /></span><p>Your agents’ notes will gather here.</p><span>Start with a destination and dates above.</span></div>
           ) : (
-            <div className="brief-grid">
-              {agents.map((agent) => (
-                <article className={`brief-card ${agent.status}`} key={agent.id}>
-                  <div className="brief-card-heading"><span><AgentIcon id={agent.id} size={16} /></span><span>{agent.name}</span>{agent.status === 'running' || agent.status === 'summarizing' ? <LoaderCircle className="spin brief-spinner" size={15} /> : agent.status === 'completed' ? <Check size={15} className="brief-check" /> : null}</div>
-                  {agent.status === 'idle' ? <p className="brief-placeholder">Notes will appear while the agent researches.</p> : <div className="brief-summary"><Markdown text={agent.message} /></div>}
-                  {agent.searches.length > 0 && (
-                    <ul className="search-trail" aria-label={`${agent.name} searches`}>
-                      {agent.searches.map((query, index) => <li key={`${agent.id}-search-${index}`}>{query}</li>)}
-                    </ul>
-                  )}
-                  {agent.sources.length > 0 && (
-                    <div className="source-list">
-                      {agent.sources.map((source, index) => {
-                        const href = sourceHref(source.url);
-                        return <div className="source-item" key={`${source.title}-brief-${index}`}>
-                          {href ? <a href={href} target="_blank" rel="noreferrer">{source.title}<ArrowRight size={13} /></a> : <span>{source.title}</span>}
-                          <p>{source.excerpt}</p>
-                          {source.retrievedAt && <time dateTime={source.retrievedAt}>Retrieved {new Date(source.retrievedAt).toLocaleString()}</time>}
-                        </div>;
-                      })}
-                    </div>
-                  )}
-                </article>
-              ))}
+            <div className="pager">
+              <div className="pager-tabs" role="tablist" aria-label="Trip results">
+                {panes.map((item, position) => (
+                  <button key={item.key} type="button" role="tab" aria-selected={position === pane}
+                    className={position === pane ? 'active' : ''} onClick={() => setPane(position)}>
+                    <span aria-hidden="true">{item.emoji}</span> {item.label}
+                  </button>
+                ))}
+              </div>
+              <div className="pager-stage" role="tabpanel" key={current.key}>
+                {current.key === 'summary' ? (
+                  tripSummary
+                    ? <article className="package-summary"><span className="section-kicker">YOUR ESCAPE PLAN</span><Markdown text={tripSummary} /></article>
+                    : <p className="brief-placeholder">Your full escape plan appears once every agent finishes.</p>
+                ) : current.agent ? renderBrief(current.agent) : null}
+              </div>
+              <div className="pager-nav">
+                <button type="button" onClick={() => setPane((value) => Math.max(0, value - 1))} disabled={pane === 0}>← Back</button>
+                <span>{pane + 1} / {panes.length}</span>
+                <button type="button" onClick={() => setPane((value) => Math.min(panes.length - 1, value + 1))} disabled={pane === panes.length - 1}>Next →</button>
+              </div>
             </div>
           )}
         </section>
 
-        <section className="chat-section" aria-label="Chat with the travel assistant">
-          <div className="chat-heading">
-            <span className="chat-icon"><MessageCircle size={18} /></span>
-            <div><span className="section-kicker">YOUR TRAVEL COMPANION</span><h2>Keep the conversation going</h2></div>
+      </main>
+
+      <button type="button" className="chat-fab" aria-label={chatOpen ? 'Close travel assistant' : 'Open travel assistant'}
+        aria-expanded={chatOpen} aria-controls="chat-popup" onClick={() => setChatOpen((open) => !open)}>
+        {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
+        {!chatOpen && chatMessages.length > 0 && <span className="chat-fab-dot" aria-hidden="true" />}
+      </button>
+
+      {chatOpen && (
+        <section id="chat-popup" className="chat-popup" role="dialog" aria-modal="false" aria-label="Travel assistant">
+          <div className="chat-popup-head">
+            <span className="chat-popup-title"><span className="chat-icon"><MessageCircle size={16} /></span> Ask Dreamhaven</span>
+            <button type="button" className="chat-popup-close" onClick={() => setChatOpen(false)} aria-label="Close">
+              <X size={18} />
+            </button>
           </div>
+
           <div className="chat-messages" aria-live="polite">
             {chatMessages.length === 0 ? (
-              <p className="chat-empty">Start a trip to ask follow-up questions about the research.</p>
+              <div className="chat-welcome">
+                <p>{tripId ? 'Ask me anything about your trip. Try one of these:' : 'Plan a trip first, then ask me anything about it. Here are some ideas:'}</p>
+              </div>
             ) : chatMessages.map((message, index) => (
               <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
-                <span>{message.role === 'user' ? 'YOU' : 'VAMSDEST'}</span>
+                <span>{message.role === 'user' ? 'YOU' : 'DREAMHAVEN'}</span>
                 {message.role === 'user' ? <p>{message.content}</p> : <Markdown text={message.content} />}
               </div>
             ))}
-            {chatBusy && <div className="chat-message assistant"><span>VAMSDEST</span><p><LoaderCircle className="spin" size={16} /> Reviewing your trip notes…</p></div>}
+            {chatBusy && <div className="chat-message assistant"><span>DREAMHAVEN</span><p><LoaderCircle className="spin" size={16} /> Reviewing your trip notes…</p></div>}
           </div>
+
+          <div className="chat-suggestions" aria-label="Suggested questions">
+            {chatSuggestions.map((suggestion) => (
+              <button key={suggestion} type="button" disabled={!tripId || chatBusy || tripStatus === 'planning'}
+                onClick={() => void askQuestion(suggestion)}>
+                {suggestion}
+              </button>
+            ))}
+          </div>
+
           <form className="chat-form" onSubmit={sendMessage}>
             <input
               value={chatInput}
               onChange={(event) => setChatInput(event.target.value)}
-              placeholder={tripId ? 'Ask about your trip research…' : 'Your conversation begins with a destination'}
+              placeholder={tripId ? 'Ask about your trip…' : 'Plan a trip first'}
               maxLength={600}
               disabled={!tripId || tripStatus === 'planning' || chatBusy}
-              aria-label="Message VamsDest"
+              aria-label="Message Dreamhaven"
             />
             <button type="submit" aria-label="Send message" title="Send message" disabled={!tripId || chatBusy || !chatInput.trim()}><Send size={17} /></button>
           </form>
-          <div className="chat-footnote">VamsDest uses your trip research to answer. Verify time-sensitive travel details with the provider.</div>
+          <div className="chat-footnote">Answers come from your trip research. Check time-sensitive details with the provider.</div>
         </section>
-      </main>
+      )}
 
-      <footer className="page-footer"><span>VAMSDEST <i>·</i> TRAVEL, CONSIDERED</span><span>Research is a starting point. Your journey is yours.</span></footer>
+
+      <footer className="page-footer"><span>{PRODUCT.toUpperCase()} <i>·</i> BY {COMPANY.toUpperCase()}</span><span>Research is a starting point. Your journey is yours.</span></footer>
     </div>
   );
 }

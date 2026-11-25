@@ -8,7 +8,7 @@ export class ApiError extends Error {
   }
 }
 
-/** JSON request to the VamsDest API. */
+/** JSON request to the Dreamhaven API. */
 export async function api<T>(path: string, init: { method?: string; body?: string } = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers['Content-Type'] = 'application/json';

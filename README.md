@@ -1,6 +1,6 @@
-# VamsDest
+# Dreamhaven
 
-VamsDest is a travel-planning service. A traveler enters a destination and dates, and four specialist agents research it in parallel: Destination, Stay & Activities, Flights & Transport, and Taxi & Car. A coordinator merges their briefs into one package. A follow-up chat can answer questions about the trip, and it can search again when the findings don't cover a question.
+Dreamhaven, by Vasolai, is a private destination planner. A traveler enters a destination and dates, and four specialist agents research it in parallel: Destination, Stay & Activities, Flights & Transport, and Taxi & Car. A coordinator merges their briefs into one package. A follow-up chat can answer questions about the trip, and it can search again when the findings don't cover a question.
 
 The agents are built on **LangGraph4j** (graph orchestration) and **LangChain4j** (the Bedrock chat model and tool specifications). They run in AWS Lambda, behind API Gateway and CloudFront, with a React frontend.
 

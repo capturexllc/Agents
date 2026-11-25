@@ -88,6 +88,8 @@ Conditions:
   IsProd: !Equals [!Ref Environment, prod]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
   HasCustomDomain: !Not [!Equals [!Ref AppDomainName, ""]]
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
+  HasDnsRecords: !And [!Condition HasCustomDomain, !Condition HasHostedZone]
   EnableWaf: !Equals [!Ref EnableWaf, "true"]
 
 Resources:
@@ -604,7 +606,7 @@ Resources:
 
   AppDnsIpv4:
     Type: AWS::Route53::RecordSet
-    Condition: HasCustomDomain
+    Condition: HasDnsRecords
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref AppDomainName
@@ -615,7 +617,7 @@ Resources:
 
   AppDnsIpv6:
     Type: AWS::Route53::RecordSet
-    Condition: HasCustomDomain
+    Condition: HasDnsRecords
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref AppDomainName
