@@ -1,5 +1,5 @@
-import { DestinationCarousel } from './home';
 import { AboutPage, COMPANY, PRODUCT, Page, PrivacyPage, SiteFooter, TermsPage } from './pages';
+import { PlaceScene, pickPlaces } from './band-scenes';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowDownRight,
@@ -114,6 +114,7 @@ function goTo(page: Page) {
 }
 
 function App() {
+  const [bandPlaces] = useState(() => pickPlaces(4));
   const [destination, setDestination] = useState('');
   const [origin, setOrigin] = useState('');
   const [departureDate, setDepartureDate] = useState(plusDays(30));
@@ -252,7 +253,7 @@ function App() {
       setChatBusy(false);
       setChatMessages((current) => [...current, {
         role: 'assistant',
-        content: cause instanceof Error ? cause.message : 'The travel assistant could not respond.',
+        content: cause instanceof Error ? cause.message : 'Wanda could not respond.',
       }]);
     }
   }
@@ -341,18 +342,31 @@ function App() {
       </header>
 
       <main id="top" className="main-content">
-        <section className="workspace-intro">
-          <div className="intro-copy">
-            <p className="eyebrow"><Sparkles size={14} /> PACK YOUR CURIOSITY</p>
-            <h1>Let’s get you <em>lost</em> (on purpose).</h1>
-            <p className="intro-subtitle">Private, off-the-grid escapes planned by live research agents: the quiet coast, the hidden valley, the cabin with no Wi-Fi. Tell us where. We’ll handle the homework. You bring the sunscreen.</p>
+        <div className="photo-top">
+          <div className="photo-feature">
+            <img
+              src="https://images.unsplash.com/photo-1533105079780-92b9be482077?auto=format&fit=crop&w=1400&q=85"
+              alt="White coastal buildings above the blue Aegean Sea"
+            />
+            <div className="photo-shade" />
+            <div className="photo-caption"><span>FIELD NOTES · 01</span><strong>Leave room for the unexpected.</strong></div>
+            <div className="photo-index">36° 23' N&nbsp;&nbsp; 25° 28' E</div>
           </div>
-        </section>
+        </div>
 
-        <DestinationCarousel onPick={(name) => {
-          setDestination(name);
-          document.getElementById('destination')?.focus();
-        }} />
+        <nav className="dest-band" aria-label="Popular destinations">
+          {bandPlaces.map((item) => (
+            <button key={item.name} type="button" className="dest-tile"
+              onClick={() => {
+                setDestination(`${item.place}, ${item.name}`);
+                document.getElementById('destination')?.focus();
+              }}>
+              <PlaceScene label={`${item.place}, ${item.name}`} variant={item.variant} sky={item.sky}
+                sea={item.sea} land={item.land} accent={item.accent} className="dest-art" />
+              <span className="dest-label">{item.name}<small>{item.place}</small></span>
+            </button>
+          ))}
+        </nav>
 
         <section className="workspace-grid" aria-label="Trip planning workspace">
           <div className="left-column">
@@ -420,16 +434,6 @@ function App() {
               </div>
               {error && <div className="form-error" role="alert"><CircleAlert size={16} /> {error}</div>}
             </form>
-
-            <div className="photo-feature">
-              <img
-                src="https://images.unsplash.com/photo-1533105079780-92b9be482077?auto=format&fit=crop&w=1400&q=85"
-                alt="White coastal buildings above the blue Aegean Sea"
-              />
-              <div className="photo-shade" />
-              <div className="photo-caption"><span>FIELD NOTES · 01</span><strong>Leave room for the unexpected.</strong></div>
-              <div className="photo-index">36° 23' N&nbsp;&nbsp; 25° 28' E</div>
-            </div>
           </div>
 
           <aside className="agent-panel" aria-label="Travel research agents">
@@ -496,7 +500,7 @@ function App() {
                   </button>
                 ))}
               </div>
-              <div className="pager-stage" role="tabpanel" key={current.key}>
+              <div className="pager-stage" role="tabpanel" tabIndex={0} aria-label={`${current.label} results`} key={current.key}>
                 {current.key === 'summary' ? (
                   tripSummary
                     ? <article className="package-summary"><span className="section-kicker">YOUR ESCAPE PLAN</span><Markdown text={tripSummary} /></article>
@@ -514,16 +518,16 @@ function App() {
 
       </main>
 
-      <button type="button" className="chat-fab" aria-label={chatOpen ? 'Close travel assistant' : 'Open travel assistant'}
+      <button type="button" className="chat-fab" aria-label={chatOpen ? 'Close Wanda, your travel buddy' : 'Open Wanda, your travel buddy'}
         aria-expanded={chatOpen} aria-controls="chat-popup" onClick={() => setChatOpen((open) => !open)}>
-        {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
+        {chatOpen ? <X size={22} /> : <Plane size={24} className="fab-plane" aria-hidden="true" />}
         {!chatOpen && chatMessages.length > 0 && <span className="chat-fab-dot" aria-hidden="true" />}
       </button>
 
       {chatOpen && (
-        <section id="chat-popup" className="chat-popup" role="dialog" aria-modal="false" aria-label="Travel assistant">
+        <section id="chat-popup" className="chat-popup" role="dialog" aria-modal="false" aria-label="Wanda, your travel buddy">
           <div className="chat-popup-head">
-            <span className="chat-popup-title"><span className="chat-icon"><MessageCircle size={16} /></span> Ask Dreamhaven</span>
+            <span className="chat-popup-title"><span className="chat-icon"><MessageCircle size={16} /></span> Wanda, your travel buddy</span>
             <button type="button" className="chat-popup-close" onClick={() => setChatOpen(false)} aria-label="Close">
               <X size={18} />
             </button>

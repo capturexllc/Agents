@@ -9,7 +9,7 @@ metadata:
     # ssl-redirect needs an HTTP:80 listener to redirect from, so both ports are listed.
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
-    # ACM certificate in the same region as the cluster, covering vasolai.com and www.vasolai.com.
+    # ACM certificate in the same region as the cluster, covering vasolai.com.
     alb.ingress.kubernetes.io/certificate-arn: REPLACE_WITH_ACM_CERTIFICATE_ARN
     # Optional. Uncomment and set only after creating a WAF web ACL in this region (regional scope).
     # alb.ingress.kubernetes.io/wafv2-acl-arn: REPLACE_WITH_REGIONAL_WAF_ACL_ARN
@@ -17,16 +17,6 @@ spec:
   ingressClassName: alb
   rules:
     - host: vasolai.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: vamsdest
-                port:
-                  name: http
-    - host: www.vasolai.com
       http:
         paths:
           - path: /

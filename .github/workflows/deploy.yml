@@ -122,6 +122,9 @@ jobs:
       - name: Upload policy and rule documents
         run: scripts/upload-policies.sh "$STACK_NAME" "$AWS_REGION"
 
+      - name: Upload embedding model (skipped when already present)
+        run: scripts/fetch-embedding-model.sh "$STACK_NAME" "$AWS_REGION"
+
       - name: Publish web app
         run: scripts/deploy-web.sh "$STACK_NAME" "$AWS_REGION"
 

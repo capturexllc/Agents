@@ -959,11 +959,11 @@ body {
 }
 
 .dh-carousel {
-  position: relative; margin: 18px auto 8px; max-width: 980px; border-radius: 28px; overflow: hidden;
+  position: relative; margin: 12px auto 8px; max-width: 480px; border-radius: 18px; overflow: hidden;
   background: #073f55; box-shadow: 0 30px 60px -30px rgba(7, 63, 85, 0.6); outline: none;
 }
 .dh-carousel:focus-visible { box-shadow: 0 0 0 3px #f6c453, 0 30px 60px -30px rgba(7, 63, 85, 0.6); }
-.dh-stage { position: relative; aspect-ratio: 16 / 8; min-height: 260px; }
+.dh-stage { position: relative; aspect-ratio: 16 / 8; min-height: 0; }
 .dh-stage::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(180deg, rgba(7, 63, 85, 0) 35%, rgba(7, 63, 85, 0.78) 100%);
@@ -972,11 +972,11 @@ body {
 .dh-slide.active { opacity: 1; transform: scale(1); }
 .dh-art { width: 100%; height: 100%; display: block; }
 .dh-caption {
-  position: absolute; left: 28px; bottom: 26px; right: 28px; max-width: 480px; z-index: 1; color: #fff;
+  position: absolute; left: 14px; bottom: 12px; right: 14px; z-index: 1; color: #fff;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35); animation: dh-rise 0.6s ease both;
 }
-.dh-caption h2 { font: 700 clamp(26px, 3.4vw, 36px)/1.1 var(--serif); margin: 4px 0 6px; }
-.dh-caption p { margin: 0 0 14px; font-size: 15px; }
+.dh-caption h2 { font: 700 19px/1.1 var(--serif); margin: 2px 0 4px; }
+.dh-caption p { margin: 0 0 8px; font-size: 12px; line-height: 1.4; }
 .dh-kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #f6c453; font-weight: 700; }
 .dh-pick {
   display: inline-flex; gap: 6px; align-items: center; border: 0; border-radius: 999px; padding: 10px 18px;
@@ -1011,7 +1011,11 @@ body {
 }
 .pager-tabs button:hover { transform: translateY(-1px); color: var(--ocean-deep); }
 .pager-tabs button.active { background: linear-gradient(90deg, #0b5c78, #0f9aa6); color: #fff; box-shadow: 0 10px 22px -12px rgba(11, 92, 120, 0.9); }
-.pager-stage { margin-top: 16px; min-height: 220px; animation: dh-rise 0.4s ease both; }
+.pager-stage {
+  margin-top: 16px; min-height: 220px; max-height: 560px; overflow-y: auto; padding-right: 6px;
+  overscroll-behavior: contain; scrollbar-gutter: stable; animation: dh-rise 0.4s ease both;
+}
+.pager-stage:focus-visible { outline: 3px solid #f6c453; outline-offset: 4px; border-radius: 12px; }
 .pager-stage .brief-card { width: 100%; border-radius: 22px; border-top: 5px solid #0f9aa6; box-shadow: 0 20px 40px -26px rgba(7, 63, 85, 0.5); }
 .pager-stage .brief-card.running, .pager-stage .brief-card.summarizing { border-top-color: #ff6f59; }
 .pager-stage .package-summary {
@@ -1027,22 +1031,86 @@ body {
 .pager-nav button:disabled { opacity: 0.35; cursor: default; }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-shell::before, .app-shell::after, .dh-slide, .dh-caption, .pager-stage { animation: none; transition: none; }
+  .app-shell::before, .app-shell::after, .dh-slide, .dh-caption, .pager-stage, .chat-fab, .fab-plane { animation: none; transition: none; }
 }
 @media (max-width: 640px) {
-  .dh-stage { aspect-ratio: 4 / 4.2; min-height: 380px; }
-  .dh-caption { left: 18px; right: 18px; bottom: 18px; }
-  .dh-caption h2 { font-size: 26px; }
+  .dh-stage { aspect-ratio: 16 / 10; min-height: 0; }
+  .dh-caption { left: 10px; right: 10px; bottom: 8px; }
+  .dh-caption h2 { font-size: 17px; }
   .dh-arrow { top: 22%; }
+}
+
+/* ---------- Hero band: slim strip across the top ---------- */
+.dh-carousel { max-width: 100%; margin: 8px 0; border-radius: 14px; }
+.dh-stage { aspect-ratio: auto; height: 96px; }
+.dh-caption { left: 14px; right: 14px; bottom: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
+.dh-caption .dh-kicker, .dh-caption p { display: none; }
+.dh-caption h2 { margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-pick { padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+.dh-arrow { width: 30px; height: 30px; top: 50%; }
+.dh-controls { padding: 4px 10px; }
+.dh-dots button { width: 7px; height: 7px; }
+.dh-dots button.active { width: 20px; }
+@media (max-width: 640px) {
+  .dh-stage { height: 96px; aspect-ratio: auto; }
+  .dh-caption h2 { font-size: 14px; }
+  .dh-pick { font-size: 11px; }
+}
+
+/* ---------- Hero pair: intro and carousel side by side, both square ---------- */
+.hero-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 760px; margin: 12px auto; }
+.hero-pair > .workspace-intro, .hero-pair > .dh-carousel { margin: 0; max-width: none; width: 100%; aspect-ratio: 1 / 1; }
+.hero-pair > .workspace-intro { padding: 18px; border-radius: 18px; background: #fff; display: flex; align-items: center; box-shadow: var(--shadow-card); }
+.hero-pair .workspace-intro h1 { font-size: clamp(20px, 2.6vw, 26px); margin: 6px 0; }
+.hero-pair .intro-subtitle { font-size: 13px; line-height: 1.45; margin: 0; }
+.hero-pair .dh-carousel { display: flex; flex-direction: column; border-radius: 18px; }
+.hero-pair .dh-stage { flex: 1 1 auto; height: auto; min-height: 0; }
+.hero-pair .dh-caption { bottom: 10px; }
+@media (max-width: 640px) {
+  .hero-pair { grid-template-columns: 1fr; }
+  .hero-pair > .workspace-intro, .hero-pair > .dh-carousel { aspect-ratio: auto; }
+  .hero-pair .dh-stage { min-height: 200px; }
+}
+
+/* ---------- Top photo and full-width destination band ---------- */
+.photo-top { margin: 12px 0 0; }
+.photo-top .photo-feature { min-height: 220px; border-radius: 18px; }
+.dest-band {
+  display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; height: 130px; margin: 12px 0 0;
+  border-radius: 18px; overflow: hidden; box-shadow: var(--shadow-card);
+}
+.dest-tile {
+  position: relative; border: 0; padding: 0; cursor: pointer; overflow: hidden; background: #073f55;
+  transition: filter 0.2s;
+}
+.dest-tile:hover { filter: brightness(1.08); }
+.dest-art { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.dest-label {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 8px; text-align: left; color: #fff;
+  font: 700 15px var(--serif); background: linear-gradient(180deg, rgba(7, 63, 85, 0) 0%, rgba(7, 63, 85, 0.75) 100%);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column;
+}
+.dest-label small { font: 500 11px var(--sans, system-ui); opacity: 0.9; }
+@media (max-width: 640px) {
+  .dest-band { grid-template-columns: repeat(2, 1fr); height: 200px; }
 }
 
 /* ---------- Floating travel assistant: icon button and popup ---------- */
 .chat-fab {
-  position: fixed; right: 22px; bottom: 22px; z-index: 60; width: 60px; height: 60px; border-radius: 50%; border: 0;
+  position: fixed; right: 22px; bottom: 22px; z-index: 1000; width: 64px; height: 64px; border-radius: 50%; border: 0;
   display: grid; place-items: center; color: #fff; cursor: pointer;
   background: linear-gradient(135deg, #ff6f59, #ffab6b 55%, #f6c453);
   box-shadow: 0 16px 34px -12px rgba(255, 111, 89, 0.85), 0 0 0 0 rgba(255, 111, 89, 0.45);
-  animation: dh-pulse 2.8s ease-out infinite; transition: transform 0.2s;
+  animation: dh-pulse 2.8s ease-out infinite, fab-blink 1.6s ease-in-out infinite; transition: transform 0.2s;
+}
+.fab-plane { animation: fab-wiggle 2.4s ease-in-out infinite; }
+@keyframes fab-blink {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.35) saturate(1.2); }
+}
+@keyframes fab-wiggle {
+  0%, 100% { transform: rotate(-12deg) translate(0, 0); }
+  50% { transform: rotate(12deg) translate(2px, -3px); }
 }
 .chat-fab:hover { transform: translateY(-2px) scale(1.05); }
 .chat-fab:focus-visible { outline: 3px solid #073f55; outline-offset: 3px; }
